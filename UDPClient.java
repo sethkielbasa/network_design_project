@@ -1,3 +1,5 @@
+package network_design_project;
+
 import java.io.*;
 import java.net.*;
 public class UDPClient {
