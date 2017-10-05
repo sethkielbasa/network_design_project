@@ -2,13 +2,25 @@ package network_design_project;
 import java.io.*;
 import java.net.*;
 
-public class UDPServer {	
+public class UDPServer implements Runnable {	
 	
-	public static void main(String args[]) throws Exception {
-		
-		String imageName = "server_image.jpg";
-		int port = 9878;
-
+	String imageName;
+	int port;
+	
+	public UDPServer(String image, int portNum)
+	{
+		imageName = image;
+		port = portNum;
+	}
+	
+	public static void main(String args[]) throws Exception 
+	{
+		UDPServer s = new UDPServer("server_image.jpg", 9878);
+		s.receiveImage();
+	}
+	
+	public void receiveImage() throws Exception
+	{
 		/*
 		 * 
 		 *  Following code taken from
@@ -71,6 +83,15 @@ public class UDPServer {
 			sendData = receivedData.getBytes();
 			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, ports);
 			serverSocket.send(sendPacket);
+		}
+	}
+
+	@Override
+	public void run() {
+		try {
+			receiveImage();
+		} catch (Exception e) {
+			e.printStackTrace();
 		}
 	}
 }

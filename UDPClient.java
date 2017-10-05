@@ -2,9 +2,17 @@ package network_design_project;
 
 import java.io.*;
 import java.net.*;
-public class UDPClient {
+public class UDPClient implements Runnable{
 	
 	public static final int BYTES_PER_PACKET = 1024; //set packet size
+	String imageName;
+	int port;
+	
+	public UDPClient(String image, int portNum)
+	{
+		port = portNum;
+		imageName = image;
+	}
 	
 	public static int getNumberOfPacketsToSend(String file_to_send) throws IOException{
 		
@@ -19,10 +27,12 @@ public class UDPClient {
 	}
 	
 	public static void main(String args[]) throws Exception {
-		
-		String imageName = "client_image.jpg";
-		int port = 9878;
-		
+		UDPClient c = new UDPClient("client_image.jpg", 9878);
+		c.transferImage();
+	}
+	
+	public void transferImage() throws Exception
+	{
 		/*
 		 * 
 		 *  Following code taken from
@@ -88,4 +98,13 @@ public class UDPClient {
 		System.out.println("FROM SERVER: " + serverResponse.substring(0, substring ) + " packets received");
 		clientSocket.close();
 }
+
+	@Override
+	public void run() {
+		try {
+			transferImage();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
 }
