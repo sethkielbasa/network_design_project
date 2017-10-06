@@ -7,16 +7,55 @@ public class UDPClient implements Runnable{
 	public static final int BYTES_PER_PACKET = 1024; //set packet size
 	String imageName;
 	int port;
+	boolean packetLogging;
+	FileWriter out;
 	
-	public UDPClient(String image, int portNum)
+	/*
+	 * If packetLogging is enabled, log messages to file and timestamps them.
+	 * Otherwise, puts them out to System.out
+	 */
+	private void log(String logmsg) throws IOException
+	{
+		if(packetLogging)
+		{
+			long nowTime = System.currentTimeMillis();
+			out.write(Long.toString(nowTime) + ": " +logmsg + "\r\n");
+		}
+		
+		System.out.println(logmsg);
+	}
+	
+	@Override
+	protected void finalize()
+	{
+		if(packetLogging)
+		{
+			try {
+				out.close();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+	public UDPClient(String image, int portNum, boolean logging)
 	{
 		port = portNum;
 		imageName = image;
+		packetLogging = logging;
+		if(logging)
+		{
+			try {
+				out = new FileWriter("ClientLog.txt");
+				out.write("Writing Client packet traffic:\r\n\r\n");
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
 	}
 	
 	public static int getNumberOfPacketsToSend(String file_to_send) throws IOException{
-		
-		int number_of_packets = 0;		
+		int number_of_packets = 0;
+		System.out.println(file_to_send);
 		FileInputStream fis = new FileInputStream( file_to_send ); //Open file to send
 		number_of_packets = (fis.available() / BYTES_PER_PACKET); //size of file divided by packet size
 		if ( fis.available() % BYTES_PER_PACKET > 0){ //if there are bytes leftover
@@ -27,7 +66,7 @@ public class UDPClient implements Runnable{
 	}
 	
 	public static void main(String args[]) throws Exception {
-		UDPClient c = new UDPClient("client_image.jpg", 9878);
+		UDPClient c = new UDPClient("client_image.jpg", 9878, false);
 		c.transferImage();
 	}
 	
@@ -46,7 +85,7 @@ public class UDPClient implements Runnable{
 		byte[] receiveData = new byte[BYTES_PER_PACKET];
 		int num_packets = getNumberOfPacketsToSend( imageName ); //get number of packets
 		
-		System.out.println( "CLIENT: Sending " + num_packets + " packets");
+		log( "CLIENT: Sending " + num_packets + " packets");
 		
 		//Send amount packets to expect to the server
 		sendSize = new byte[String.valueOf(num_packets).getBytes().length];
@@ -81,7 +120,7 @@ public class UDPClient implements Runnable{
 		 *  https://lowell.umassonline.net/bbcswebdav/pid-305360-dt-content-rid-977475_1/courses/L2710-11029/Sockets.pdf
 		 * 
 		 */
-		System.out.println("CLIENT: Waiting for server response");
+		log("CLIENT: Waiting for server response");
 		DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
 		clientSocket.receive(receivePacket);
 		String serverResponse = new String(receivePacket.getData());
@@ -95,7 +134,11 @@ public class UDPClient implements Runnable{
 				break;
 		}	
 		
-		System.out.println("FROM SERVER: " + serverResponse.substring(0, substring ) + " packets received");
+		log("FROM SERVER: " + serverResponse.substring(0, substring ) + " packets received");
+		
+		//Close the log
+		if(packetLogging)
+			out.close();
 		clientSocket.close();
 }
 

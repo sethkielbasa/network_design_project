@@ -5,6 +5,7 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.File;
 
 import javax.swing.JOptionPane;
 
@@ -18,6 +19,9 @@ public class CopyGUI extends Frame {
 	
 	Label serverIm;  //label and text field for received image name
 	TextField serverField;
+	
+	Checkbox clientLogging; //check to enable client/server logging to file
+	Checkbox serverLogging;
 	
 	Label clientIm; //label and fc for picking image to send.
 	Button fcButton;
@@ -53,7 +57,7 @@ public class CopyGUI extends Frame {
 			new JOptionPane("Port number could not be parsed to Int. Default value used (9999)", JOptionPane.ERROR_MESSAGE);
 		}
 		
-		client = new UDPClient(clientFile, port);
+		client = new UDPClient(clientFile, port, clientLogging.getState());
 		//make the thread
 		clientThread = new Thread(client);
 		clientThread.start();
@@ -73,7 +77,7 @@ public class CopyGUI extends Frame {
 		} catch (NumberFormatException e) {
 			new JOptionPane("Port number could not be parsed to Int. Default value used (9999).", JOptionPane.ERROR_MESSAGE);
 		}
-		server = new UDPServer(serverField.getText(), port);
+		server = new UDPServer(serverField.getText(), port, serverLogging.getState());
 		
 		//make the thread
 		serverThread = new Thread(server);
@@ -91,13 +95,17 @@ public class CopyGUI extends Frame {
 		serverIm = new Label("Server Image Name");
 		serverField = new TextField("server_image.jpg");
 		
+		clientLogging = new Checkbox("Client Logging");
+		serverLogging = new Checkbox("Server Logging");
+		
 		clientIm = new Label("Image name:");
 		fcButton = new Button("Choose file to Send");
 		fc = new FileDialog(this, "Choose an image", FileDialog.LOAD);
 		clientFile = null;
 		
-		startServer = new Button("Start Server");
+		startServer = new Button("Start Server");		
 		startClient = new Button("Start Client");
+		startClient.setEnabled(false); //button is disabled until client filename is set.
 		
 		//set layout
 		setLayout(new GridLayout(0,2));
@@ -105,6 +113,8 @@ public class CopyGUI extends Frame {
 		add(portField);
 		add(serverIm);
 		add(serverField);
+		add(clientLogging);
+		add(serverLogging);
 		add(clientIm);
 		add(fcButton);
 		add(startServer);
@@ -115,6 +125,17 @@ public class CopyGUI extends Frame {
 		startServer.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				startServerThread();
+				
+				//sleep for just over a second... then enable the client button if a file is selected
+				//Code used from https://stackoverflow.com/questions/24104313/how-to-delay-in-java
+				try {
+					Thread.sleep(1200);
+				} catch (InterruptedException e1) {
+					e1.printStackTrace();
+					Thread.currentThread().interrupt();
+				}
+				if(clientFile != null)
+					startClient.setEnabled(true);
 			}
 		}); 
 		
@@ -127,11 +148,18 @@ public class CopyGUI extends Frame {
 		fcButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				fc.setVisible(true);
-				String fn = fc.getFile();
+				String fn = fc.getDirectory() + fc.getFile(); //a workaround to get the absolute path to the file
+				fn = fn.replaceAll("\\\\", "/");//convert windows to java path format: https://stackoverflow.com/questions/3059383/file-path-windows-format-to-java-format
+				
 				if(fn != null)
 				{
+					//update state and label text
 					clientFile = fn;
-					clientIm.setText("Image name: " + fn);
+					clientIm.setText("Image name: " + fc.getFile());
+					
+					//if the server is running and the file looks good
+					if(fn != null && serverThread != null && serverThread.isAlive())
+						startClient.setEnabled(true);
 				}
 			}
 		});

@@ -2,20 +2,64 @@ package network_design_project;
 import java.io.*;
 import java.net.*;
 
+
 public class UDPServer implements Runnable {	
 	
 	String imageName;
 	int port;
+	boolean packetLogging;
+	FileWriter out;
 	
-	public UDPServer(String image, int portNum)
+	/*
+	 * If packetLogging is enabled, log messages to file and timestamps them.
+	 * Otherwise, puts them out to System.out
+	 */
+	private void log(String logmsg) throws IOException
+	{
+		if(packetLogging)
+		{
+			long nowTime = System.currentTimeMillis();
+			out.write(Long.toString(nowTime) + ": " +logmsg + "\r\n");
+		}
+		System.out.println(logmsg);
+	}
+	
+	@Override
+	protected void finalize()
+	{
+		if(packetLogging)
+		{
+			try {
+				out.close();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+	
+	/*
+	 * Craetes a new server
+	 * if logging is enabled, creates a new log file and writes packet messages to them.
+	 */
+	public UDPServer(String image, int portNum, boolean logging) 
 	{
 		imageName = image;
 		port = portNum;
+		packetLogging = logging;
+		if(packetLogging)
+		{
+			try {
+				out = new FileWriter("ServerLog.txt");
+				out.write("Logging Server packet traffic:\r\n\r\n");
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
 	}
 	
 	public static void main(String args[]) throws Exception 
 	{
-		UDPServer s = new UDPServer("server_image.jpg", 9878);
+		UDPServer s = new UDPServer("server_image.jpg", 9878, false);
 		s.receiveImage();
 	}
 	
@@ -60,7 +104,7 @@ public class UDPServer implements Runnable {
 			int packets_received = 0;
 			
 			FileOutputStream fos = new FileOutputStream(imageName); //Open output file
-			System.out.println("SERVER: Waiting for " + packets_expected + " packets");
+			log("SERVER: Waiting for " + packets_expected + " packets");
 			while ( packets_received < packets_expected){
 				receiveData = new byte[1024];
 				receivePacket = new DatagramPacket(receiveData, receiveData.length);
@@ -68,7 +112,9 @@ public class UDPServer implements Runnable {
 				fos.write(receiveData);
 				packets_received++;
 			}
-			System.out.println("SERVER: Got " + packets_received + " packets\n");
+			log("SERVER: Got " + packets_received + " packets\n");
+			if(packetLogging)
+				out.close();
 			fos.close();
 			
 			/*
