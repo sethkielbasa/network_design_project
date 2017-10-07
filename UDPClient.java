@@ -93,8 +93,13 @@ public class UDPClient implements Runnable{
 		DatagramPacket sendPacket = new DatagramPacket(sendSize, sendSize.length, IPAddress, port);
 		clientSocket.send(sendPacket);
 		
-		FileInputStream fis = new FileInputStream( imageName );
-				
+		while(true){
+			DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+			clientSocket.receive(receivePacket);
+			break;
+		}
+		
+		FileInputStream fis = new FileInputStream( imageName );		
 		while( true ){
 			int data_size = fis.available(); //get bytes left to read
 			if (data_size > 1024){

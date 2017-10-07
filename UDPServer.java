@@ -2,6 +2,8 @@ package network_design_project;
 import java.io.*;
 import java.net.*;
 
+import javax.swing.JOptionPane;
+
 
 public class UDPServer implements Runnable {	
 	
@@ -76,8 +78,28 @@ public class UDPServer implements Runnable {
 		byte[] receiveData = new byte[1024];
 		byte[] sendData = new byte[1024];
 		
+		DatagramPacket receivePacket = null;
+		InetAddress IPAddress = null;
+		int ports = 0;
+		String sentence;
+		
 		while(true) {
 			
+			receiveData = null;
+			receivePacket = null;
+			sentence = null;
+			IPAddress = null;
+			ports = 0;
+			
+			if(packetLogging)
+			{
+				try {
+					out = new FileWriter("ServerLog.txt");
+					out.write("Logging Server packet traffic:\r\n\r\n");
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
 			/*
 			 * 
 			 *  Following code taken from
@@ -85,9 +107,9 @@ public class UDPServer implements Runnable {
 			 * 
 			 */
 			receiveData = new byte[1024];
-			DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+			receivePacket = new DatagramPacket(receiveData, receiveData.length);
 			serverSocket.receive(receivePacket);	
-			String sentence = new String(receivePacket.getData());
+			sentence = new String(receivePacket.getData());
 			
 			//pull first of data that contains packets to expect
 			int substring = 0;
@@ -105,6 +127,14 @@ public class UDPServer implements Runnable {
 			
 			FileOutputStream fos = new FileOutputStream(imageName); //Open output file
 			log("SERVER: Waiting for " + packets_expected + " packets");
+						
+			IPAddress = receivePacket.getAddress();
+			ports = receivePacket.getPort();
+			String receivedData = "Ready";
+			sendData = receivedData.getBytes();
+			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, ports);
+			serverSocket.send(sendPacket);
+			
 			while ( packets_received < packets_expected){
 				receiveData = new byte[1024];
 				receivePacket = new DatagramPacket(receiveData, receiveData.length);
@@ -112,6 +142,7 @@ public class UDPServer implements Runnable {
 				fos.write(receiveData);
 				packets_received++;
 			}
+			
 			log("SERVER: Got " + packets_received + " packets\n");
 			if(packetLogging)
 				out.close();
@@ -123,12 +154,13 @@ public class UDPServer implements Runnable {
 			 *  https://lowell.umassonline.net/bbcswebdav/pid-305360-dt-content-rid-977475_1/courses/L2710-11029/Sockets.pdf
 			 * 
 			 */
-			InetAddress IPAddress = receivePacket.getAddress();
-			int ports = receivePacket.getPort();
-			String receivedData = String.valueOf(packets_received + " packets received");
+			IPAddress = receivePacket.getAddress();
+			ports = receivePacket.getPort();
+			receivedData = String.valueOf(packets_received + " packets received");
 			sendData = receivedData.getBytes();
-			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, ports);
+			sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, ports);
 			serverSocket.send(sendPacket);
+			
 		}
 	}
 
