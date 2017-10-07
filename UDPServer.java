@@ -57,11 +57,6 @@ public class UDPServer implements Runnable {
 		}
 	}
 	
-	public static void main(String args[]) throws Exception 
-	{
-		UDPServer s = new UDPServer("server_image.jpg", 9878, false);
-		s.receiveImage();
-	}
 	
 	public void receiveImage() throws Exception
 	{
@@ -135,7 +130,11 @@ public class UDPServer implements Runnable {
 	@Override
 	public void run() {
 		try {
+			log("SERVER: Starting UDP Server...");
+			//System.out.println("SERVER: Starting UDP Server...");
 			receiveImage();
+			log("SERVER: UDP Server closed.");
+			//System.out.println("SERVER: UDP Server closed.");
 		} catch (Exception e) {
 			e.printStackTrace();
 		}

@@ -65,10 +65,6 @@ public class UDPClient implements Runnable{
 		return number_of_packets;
 	}
 	
-	public static void main(String args[]) throws Exception {
-		UDPClient c = new UDPClient("client_image.jpg", 9878, false);
-		c.transferImage();
-	}
 	
 	public void transferImage() throws Exception
 	{
@@ -145,7 +141,11 @@ public class UDPClient implements Runnable{
 	@Override
 	public void run() {
 		try {
+			log("CLIENT: Starting UDP Client...");
+			//System.out.println("CLIENT: Starting UDP Client...");
 			transferImage();
+			log("CLIENT: Ending UDP Client...");
+			//System.out.println("CLIENT: Ending UDP Client...");
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
