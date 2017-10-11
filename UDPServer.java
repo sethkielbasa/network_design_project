@@ -2,6 +2,8 @@ package network_design_project;
 import java.io.*;
 import java.net.*;
 
+import javax.swing.JOptionPane;
+
 
 public class UDPServer implements Runnable {	
 	
@@ -9,10 +11,6 @@ public class UDPServer implements Runnable {
 	int port;
 	boolean packetLogging;
 	FileWriter out;
-	
-	private final int DATA_SIZE = 1024;
-	private final int HEADER_SIZE = 6;
-	private final int PACKET_SIZE = DATA_SIZE + HEADER_SIZE;
 	
 	/*
 	 * If packetLogging is enabled, log messages to file and timestamps them.
@@ -61,70 +59,10 @@ public class UDPServer implements Runnable {
 		}
 	}
 	
-/*	
 	public static void main(String args[]) throws Exception 
 	{
 		UDPServer s = new UDPServer("server_image.jpg", 9878, false);
 		s.receiveImage();
-	}
-*/
-	
-	private byte[] destructPacket ( byte[] packet ){
-		
-		byte[] ackNumber = new byte[2];
-		byte[] checksum = new byte[2];
-		byte[] length = new byte[2];
-		
-		int packetLength = packet[4] & 0xFF;
-		packetLength = packetLength << 8;
-		packetLength = packetLength | (packet [5] & 0xFF);
-		
-		byte[] data = new byte[packetLength];	
-		for( int i = 0; i < packetLength; i++){
-			data[i] = packet[ i + HEADER_SIZE ];
-		}
-		
-		return data;	
-	}
-	
-	private byte[] addPacketHeader(int packetSize, byte[] readData ){
-		
-		byte[] packet = new byte[packetSize + HEADER_SIZE];
-		
-		for ( int i = 0; i < packetSize; i++){
-			packet[i + HEADER_SIZE] = readData[i];
-		}
-		
-		//Not doing checksum on way back
-		packet[2] = 0;
-		packet[3] = 0;
-		
-		byte[] ackNumber = new byte[2];
-		ackNumber = calculateAckNumber();
-		packet[0] = ackNumber[0];
-		packet[1] = ackNumber[1];
-		
-		assert ( packetSize > 1024 );
-		packet[5] = (byte) (packetSize & 0xFF);
-		packet[4] = (byte) ((packetSize >> 8) & 0xFF);
-		
-		return packet;
-	}
-	
-	private byte[] calculateAckNumber(){
-		byte[] ackNum = new byte[2];
-		ackNum[0] = 0;
-		ackNum[1] = 0;
-		
-		return ackNum;
-	}
-	
-	
-	private void transmitPacket(byte[] packet, DatagramSocket socket, InetAddress IPAddress ) throws Exception{
-
-		DatagramPacket sendPacket = new DatagramPacket(packet, packet.length, IPAddress, port);
-		socket.send(sendPacket);
-		
 	}
 	
 	public void receiveImage() throws Exception
@@ -135,20 +73,23 @@ public class UDPServer implements Runnable {
 		 *  https://lowell.umassonline.net/bbcswebdav/pid-305360-dt-content-rid-977475_1/courses/L2710-11029/Sockets.pdf
 		 * 
 		 */
-			
+		@SuppressWarnings("resource")
 		DatagramSocket serverSocket = new DatagramSocket(port);
-		byte[] packet = new byte[PACKET_SIZE];
+		byte[] receiveData = new byte[1024];
+		byte[] sendData = new byte[1024];
 		
 		DatagramPacket receivePacket = null;
 		InetAddress IPAddress = null;
-		String data;
+		int ports = 0;
+		String sentence;
 		
 		while(true) {
 			
-			packet = null;
+			receiveData = null;
 			receivePacket = null;
-			data = null;
+			sentence = null;
 			IPAddress = null;
+			ports = 0;
 			
 			if(packetLogging)
 			{
@@ -165,52 +106,44 @@ public class UDPServer implements Runnable {
 			 *  https://lowell.umassonline.net/bbcswebdav/pid-305360-dt-content-rid-977475_1/courses/L2710-11029/Sockets.pdf
 			 * 
 			 */
-			
-			
-			packet = new byte[1028];
-			receivePacket = new DatagramPacket(packet, packet.length);
+			receiveData = new byte[1024];
+			receivePacket = new DatagramPacket(receiveData, receiveData.length);
 			serverSocket.receive(receivePacket);	
-			data = new String(receivePacket.getData());
+			sentence = new String(receivePacket.getData());
 			
-			int packetLength = packet[4] & 0xFF;
-			packetLength = packetLength << 8;
-			packetLength = packetLength | (packet [5] & 0xFF);
+			//pull first of data that contains packets to expect
+			int substring = 0;
+			for( int i = 0; i<1024; i++)
+			{
+				if ( Character.isDigit(sentence.charAt(i)) )
+					substring++;
+				else
+					break;
+			}	
+			sentence = sentence.substring(0, substring );
 			
-			data = data.substring( HEADER_SIZE , HEADER_SIZE + packetLength );
-						
-			int packets_expected = Integer.parseInt(data, 10);
+			int packets_expected = Integer.parseInt(sentence, 10);
 			int packets_received = 0;
-			log("SERVER: Waiting for " + packets_expected + " packets");
-			
-			IPAddress = receivePacket.getAddress();
-			port = receivePacket.getPort();
-			
-			String sendString = "Ready";
-			byte[] sendData = sendString.getBytes();
-			packet = new byte[sendData.length + HEADER_SIZE];
-			packet = addPacketHeader( sendData.length , sendData );			
-			transmitPacket( packet, serverSocket, IPAddress); 
-			
 			
 			FileOutputStream fos = new FileOutputStream(imageName); //Open output file
+			log("SERVER: Waiting for " + packets_expected + " packets");
+						
+			IPAddress = receivePacket.getAddress();
+			ports = receivePacket.getPort();
+			String receivedData = "Ready";
+			sendData = receivedData.getBytes();
+			DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, ports);
+			serverSocket.send(sendPacket);
 			
-			log("SERVER: Ready for packets");
 			while ( packets_received < packets_expected){
-				packet = new byte[PACKET_SIZE];
-				receivePacket = new DatagramPacket(packet, packet.length);
-				serverSocket.receive(receivePacket);
-				byte[] packetData = destructPacket( packet );
-				
-				if ( packetData != null){
-					fos.write(packetData);
-				} else {
-					System.out.println("SERVER: Null packet :( ");
-					//TODO
-				}
+				receiveData = new byte[1024];
+				receivePacket = new DatagramPacket(receiveData, receiveData.length);
+				serverSocket.receive(receivePacket);				
+				fos.write(receiveData);
 				packets_received++;
 			}
 			
-			log("SERVER: Got " + packets_received + " packets");
+			log("SERVER: Got " + packets_received + " packets\n");
 			if(packetLogging)
 				out.close();
 			fos.close();
@@ -222,15 +155,11 @@ public class UDPServer implements Runnable {
 			 * 
 			 */
 			IPAddress = receivePacket.getAddress();
-			port = receivePacket.getPort();
-			
-			
-			sendString = String.valueOf(packets_received + " packets received");
-			byte[] endData;
-			endData = sendString.getBytes();
-			packet = new byte[endData.length + HEADER_SIZE];
-			packet = addPacketHeader( endData.length, endData );
-			transmitPacket( packet, serverSocket, IPAddress);
+			ports = receivePacket.getPort();
+			receivedData = String.valueOf(packets_received + " packets received");
+			sendData = receivedData.getBytes();
+			sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, ports);
+			serverSocket.send(sendPacket);
 			
 		}
 	}
