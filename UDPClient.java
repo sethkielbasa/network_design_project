@@ -4,9 +4,10 @@ import java.io.*;
 import java.net.*;
 public class UDPClient implements Runnable{
 	
-	private final int DATA_SIZE = 1024; //set packet size
+	
 	private final int HEADER_SIZE = 6;
-	private final int PACKET_SIZE = DATA_SIZE + HEADER_SIZE;
+	private final int PACKET_SIZE = 1024;
+	private final int DATA_SIZE = PACKET_SIZE - HEADER_SIZE; //set packet size
 	String imageName;
 	int port;
 	boolean packetLogging;
@@ -92,7 +93,7 @@ public class UDPClient implements Runnable{
 		}
 		
 		byte[] checksum = new byte[2];
-		checksum = calculateChecksum( readData );
+		checksum = calculateChecksum( readData , true );
 		packet[2] = checksum[0];
 		packet[3] = checksum[1];
 		
@@ -101,18 +102,40 @@ public class UDPClient implements Runnable{
 		packet[0] = ackNumber[0];
 		packet[1] = ackNumber[1];
 		
-		assert ( packetSize > 1024 );
+		assert ( packetSize > PACKET_SIZE );
 		packet[5] = (byte) (packetSize & 0xFF);
 		packet[4] = (byte) ((packetSize >> 8) & 0xFF);
 		
 		return packet;
 	}
 	
-	private byte[] calculateChecksum( byte[] readData ){
+	private byte[] calculateChecksum( byte[] readData, boolean invertFlag ){
 		byte[] checksum = new byte[2];
 		checksum[0] = 0;
 		checksum[1] = 0;
 		
+		int checksum16bit = 0;	
+		for( int i = 0; i < readData.length; i++){
+			int temp = 0;
+			temp = readData[i] & 0xFF;
+			temp = temp << 8;
+			if(i < readData.length - 1){
+				temp = temp | (readData[++i] & 0xFF);
+			} else {
+				temp = temp | 0 & 0xFF;
+			}
+			checksum16bit = checksum16bit + temp;
+			if( checksum16bit > 65535 ){
+				checksum16bit = checksum16bit - 65534;
+			}
+		}
+		if(invertFlag){
+			checksum16bit = ~checksum16bit;
+		}
+		
+		checksum[0] = (byte) (checksum16bit & 0xFF);
+		checksum[1] = (byte) ((checksum16bit >> 8) & 0xFF);
+			
 		return checksum;
 	}
 	

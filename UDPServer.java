@@ -10,9 +10,11 @@ public class UDPServer implements Runnable {
 	boolean packetLogging;
 	FileWriter out;
 	
-	private final int DATA_SIZE = 1024;
+	
 	private final int HEADER_SIZE = 6;
-	private final int PACKET_SIZE = DATA_SIZE + HEADER_SIZE;
+	private final int PACKET_SIZE = 1024;
+	private final int DATA_SIZE = PACKET_SIZE - HEADER_SIZE;
+	private int corruptedCounter = 0;
 	
 	/*
 	 * If packetLogging is enabled, log messages to file and timestamps them.
@@ -84,7 +86,24 @@ public class UDPServer implements Runnable {
 			data[i] = packet[ i + HEADER_SIZE ];
 		}
 		
-		return data;	
+		boolean checksumHealthy;
+		
+		checksum = calculateChecksum( data, false );
+		checksum = bitsCorrupted( checksum, 30);
+		if( (~(packet[2] ^ checksum[0]) == 0) && (~(packet[3] ^ checksum[1]) == 0) ){
+			checksumHealthy = true;
+		} else {
+			corruptedCounter++;
+			checksumHealthy = false;
+		}
+		
+		
+		if(checksumHealthy){
+			return data;
+		} else {
+			return data;
+		}
+			
 	}
 	
 	private byte[] addPacketHeader(int packetSize, byte[] readData ){
@@ -95,16 +114,17 @@ public class UDPServer implements Runnable {
 			packet[i + HEADER_SIZE] = readData[i];
 		}
 		
-		//Not doing checksum on way back
-		packet[2] = 0;
-		packet[3] = 0;
+		byte[] checksum = new byte[2];
+		checksum = calculateChecksum( readData , true );
+		packet[2] = checksum[0];
+		packet[3] = checksum[1];
 		
 		byte[] ackNumber = new byte[2];
 		ackNumber = calculateAckNumber();
 		packet[0] = ackNumber[0];
 		packet[1] = ackNumber[1];
 		
-		assert ( packetSize > 1024 );
+		assert ( packetSize > PACKET_SIZE );
 		packet[5] = (byte) (packetSize & 0xFF);
 		packet[4] = (byte) ((packetSize >> 8) & 0xFF);
 		
@@ -119,14 +139,52 @@ public class UDPServer implements Runnable {
 		return ackNum;
 	}
 	
-	
-	private void transmitPacket(byte[] packet, DatagramSocket socket, InetAddress IPAddress ) throws Exception{
-
-		DatagramPacket sendPacket = new DatagramPacket(packet, packet.length, IPAddress, port);
-		socket.send(sendPacket);
+	private byte[] calculateChecksum( byte[] readData, boolean invertFlag ){
+		byte[] checksum = new byte[2];
+		checksum[0] = 0;
+		checksum[1] = 0;
 		
+		int checksum16bit = 0;	
+		for( int i = 0; i < readData.length; i++){
+			int temp = 0;
+			temp = readData[i] & 0xFF;
+			temp = temp << 8;
+			if(i < readData.length - 1){
+				temp = temp | (readData[++i] & 0xFF);
+			} else {
+				temp = temp | 0 & 0xFF;
+			}
+			checksum16bit = checksum16bit + temp;
+			if( checksum16bit > 65535 ){
+				checksum16bit = checksum16bit - 65534;
+			}
+		}
+		if(invertFlag){
+			checksum16bit = ~checksum16bit;
+		}
+		
+		checksum[0] = (byte) (checksum16bit & 0xFF);
+		checksum[1] = (byte) ((checksum16bit >> 8) & 0xFF);
+			
+		return checksum;
 	}
 	
+	
+	private void transmitPacket(byte[] packet, DatagramSocket socket, InetAddress IPAddress ) throws Exception{
+		DatagramPacket sendPacket = new DatagramPacket(packet, packet.length, IPAddress, port);
+		socket.send(sendPacket);
+	}
+	
+	private byte[] bitsCorrupted(byte[] checksum, int percentChance){
+		int isItCorrupted = (int) (Math.random()*100);
+		if( isItCorrupted <= percentChance ){
+			checksum[0] = (byte) (checksum[0] - 0x01);
+			return checksum;
+		} else {
+			return checksum;
+		}
+	}
+		
 	public void receiveImage() throws Exception
 	{
 		/*
@@ -215,6 +273,9 @@ public class UDPServer implements Runnable {
 				out.close();
 			fos.close();
 			
+
+			System.out.println(corruptedCounter + " checksums corrupted :'(");
+			
 			/*
 			 * 
 			 *  Following code taken from
@@ -223,14 +284,13 @@ public class UDPServer implements Runnable {
 			 */
 			IPAddress = receivePacket.getAddress();
 			port = receivePacket.getPort();
-			
-			
 			sendString = String.valueOf(packets_received + " packets received");
 			byte[] endData;
 			endData = sendString.getBytes();
 			packet = new byte[endData.length + HEADER_SIZE];
 			packet = addPacketHeader( endData.length, endData );
 			transmitPacket( packet, serverSocket, IPAddress);
+			
 			
 		}
 	}
