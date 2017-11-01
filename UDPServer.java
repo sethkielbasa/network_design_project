@@ -7,9 +7,10 @@ public class UDPServer implements Runnable {
 	
 	String imageName;
 	int port;
+	DatagramSocket serverSocket;
 	boolean packetLogging;
 	FileWriter out;
-	
+	volatile boolean killMe = false; //if this ever goes true, kill the server asap
 	
 	private final int HEADER_SIZE = 6;
 	private final int PACKET_SIZE = 1024;
@@ -52,6 +53,7 @@ public class UDPServer implements Runnable {
 		imageName = image;
 		port = portNum;
 		packetLogging = logging;
+		killMe = false;
 		if(packetLogging)
 		{
 			try {
@@ -63,6 +65,15 @@ public class UDPServer implements Runnable {
 		}
 	}
 	
+	/*
+	 * Tell the server to stop listening to the port and finish asap
+	 */
+	public void killServer()
+	{
+		if(serverSocket != null)
+			serverSocket.close();
+		killMe = true;
+	}
 /*	
 	public static void main(String args[]) throws Exception 
 	{
@@ -194,14 +205,14 @@ public class UDPServer implements Runnable {
 		 * 
 		 */
 			
-		DatagramSocket serverSocket = new DatagramSocket(port);
+		serverSocket = new DatagramSocket(port);
 		byte[] packet = new byte[PACKET_SIZE];
 		
 		DatagramPacket receivePacket = null;
 		InetAddress IPAddress = null;
 		String data;
 		
-		while(true) {
+		while(!killMe) {
 			
 			packet = null;
 			receivePacket = null;
@@ -227,7 +238,13 @@ public class UDPServer implements Runnable {
 			
 			packet = new byte[1028];
 			receivePacket = new DatagramPacket(packet, packet.length);
-			serverSocket.receive(receivePacket);	
+			try{
+				serverSocket.receive(receivePacket);
+			} catch (SocketException e) {
+				log("Socket port closed externally");
+				break;
+			}
+		
 			data = new String(receivePacket.getData());
 			
 			int packetLength = packet[4] & 0xFF;
@@ -253,10 +270,15 @@ public class UDPServer implements Runnable {
 			FileOutputStream fos = new FileOutputStream(imageName); //Open output file
 			
 			log("SERVER: Ready for packets");
-			while ( packets_received < packets_expected){
+			while ( packets_received < packets_expected & !killMe){
 				packet = new byte[PACKET_SIZE];
 				receivePacket = new DatagramPacket(packet, packet.length);
-				serverSocket.receive(receivePacket);
+				try{
+					serverSocket.receive(receivePacket);
+				} catch (SocketException e) {
+					log("Socket port closed externally");
+					break;
+				}
 				byte[] packetData = destructPacket( packet );
 				
 				if ( packetData != null){

@@ -10,7 +10,9 @@ public class UDPClient implements Runnable{
 	private final int DATA_SIZE = PACKET_SIZE - HEADER_SIZE; //set packet size
 	String imageName;
 	int port;
+	DatagramSocket clientSocket;
 	boolean packetLogging;
+	volatile boolean killMe; //set true to exit as fast as possible
 	FileWriter out;
 	
 	/*
@@ -26,6 +28,16 @@ public class UDPClient implements Runnable{
 		}
 		
 		System.out.println(logmsg);
+	}
+	
+	/*
+	 * Tell the client to stop listening and die
+	 */
+	public void killClient()
+	{
+		if(clientSocket != null)
+			clientSocket.close();
+		killMe = true;
 	}
 	
 	@Override
@@ -158,7 +170,7 @@ public class UDPClient implements Runnable{
 		
 		//Socket setup 
 		
-		DatagramSocket clientSocket = new DatagramSocket();	
+		clientSocket = new DatagramSocket();	
 		byte[] packet;
 		
 		
@@ -175,10 +187,14 @@ public class UDPClient implements Runnable{
 		transmitPacket(packet, clientSocket);
 				
 		
-		while(true){
+		while(true && !killMe){
 			packet = new byte[PACKET_SIZE];
 			DatagramPacket receivePacket = new DatagramPacket(packet, packet.length);
-			clientSocket.receive(receivePacket);
+			try{
+				clientSocket.receive(receivePacket);
+			} catch (SocketException e) {
+				log("Socket port closed externally");
+			}
 			break;
 		}
 		
@@ -186,7 +202,7 @@ public class UDPClient implements Runnable{
 		FileInputStream fis = new FileInputStream( imageName );		
 		log( "CLIENT: Sending packets");
 		
-		while( true ){
+		while(true && !killMe){
 			int data_size = fis.available(); //get bytes left to read
 			if (data_size > DATA_SIZE){
 				data_size = DATA_SIZE; //max 1024 at a time
@@ -220,7 +236,11 @@ public class UDPClient implements Runnable{
 		
 		packet = new byte[PACKET_SIZE];
 		DatagramPacket receivePacket = new DatagramPacket(packet, packet.length);
-		clientSocket.receive(receivePacket);
+		try{
+			clientSocket.receive(receivePacket);
+		} catch (SocketException e) {
+			log("Socket port closed externally");
+		}
 		
 		String serverResponse = new String(receivePacket.getData());
 		

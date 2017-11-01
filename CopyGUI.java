@@ -34,8 +34,10 @@ public class CopyGUI extends Frame {
 	//client-server logic 
 	UDPClient client;
 	Thread clientThread;
+	boolean startClientThread = true; //state whether to start or stop the client thread
 	UDPServer server;
 	Thread serverThread;
+	boolean startServerThread = true; //state whether to start or stop the servert thread
 	
 	/*
 	 * Make a new UDPClient with portNumber and image file from the Gui's inputs
@@ -83,6 +85,40 @@ public class CopyGUI extends Frame {
 		serverThread = new Thread(server);
 		serverThread.start();
 	}
+	
+	/*
+	 * Kill the server thread
+	 */
+	void stopServerThread()
+	{
+		if(serverThread != null)
+		{
+			try{
+				server.killServer();
+				serverThread.join();
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+	}
+	
+	/*
+	 * Kill the client thread
+	 */
+	void stopClientThread()
+	{
+		if(clientThread != null)
+		{
+			try{
+				client.killClient();
+				clientThread.join();
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+	}
 	/*
 	 * Setup GUI components
 	 */
@@ -105,7 +141,6 @@ public class CopyGUI extends Frame {
 		
 		startServer = new Button("Start Server");		
 		startClient = new Button("Start Client");
-		startClient.setEnabled(false); //button is disabled until client filename is set.
 		
 		//set layout
 		setLayout(new GridLayout(0,2));
@@ -124,24 +159,41 @@ public class CopyGUI extends Frame {
 		//Anonymous class code used from S.O. https://stackoverflow.com/questions/9569700/java-call-method-via-jbutton
 		startServer.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
-				startServerThread();
-				
-				//sleep for just over a second... then enable the client button if a file is selected
-				//Code used from https://stackoverflow.com/questions/24104313/how-to-delay-in-java
-				try {
-					Thread.sleep(1200);
-				} catch (InterruptedException e1) {
-					e1.printStackTrace();
-					Thread.currentThread().interrupt();
+				if(startServerThread)
+				{
+					startServerThread();
+					
+					startServer.setLabel("Stop Server");
+					startServerThread = false;
+					
 				}
-				if(clientFile != null)
-					startClient.setEnabled(true);
+				else
+				{
+					//stop the server
+					stopServerThread();
+					if(clientFile != null)
+						startClient.setEnabled(true);
+					startServer.setLabel("Start Server");
+					startServerThread = true;
+				}
 			}
 		}); 
 		
 		startClient.addActionListener(new ActionListener() {
+			
 			public void actionPerformed(ActionEvent e) {
-				startClientThread();
+				if(startClientThread)
+				{
+					startClientThread();
+					startClient.setLabel("Stop Client");
+					startClientThread = false;
+				}
+				else
+				{
+					stopClientThread();
+					startClient.setLabel("Start Client");
+					startClientThread = true;
+				}
 			}
 		}); 
 		//Used from example about how to use a FileDialog
