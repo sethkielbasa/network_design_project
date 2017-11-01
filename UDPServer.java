@@ -5,13 +5,18 @@ import java.net.*;
 
 public class UDPServer implements Runnable {	
 	
+	//instance variables
 	String imageName;
 	int port;
 	DatagramSocket serverSocket;
 	boolean packetLogging;
 	FileWriter out;
-	volatile boolean killMe = false; //if this ever goes true, kill the server asap
+	//Chance that an outgoing packet gets corrupted
+	double corruptionChance;
+	//if this ever goes true, kill the server asap
+	volatile boolean killMe = false; 
 	
+	//Constants 
 	private final int HEADER_SIZE = 6;
 	private final int PACKET_SIZE = 1024;
 	private final int DATA_SIZE = PACKET_SIZE - HEADER_SIZE;
@@ -48,11 +53,12 @@ public class UDPServer implements Runnable {
 	 * Craetes a new server
 	 * if logging is enabled, creates a new log file and writes packet messages to them.
 	 */
-	public UDPServer(String image, int portNum, boolean logging) 
+	public UDPServer(String image, int portNum, boolean logging, double corruptionChance) 
 	{
 		imageName = image;
 		port = portNum;
 		packetLogging = logging;
+		this.corruptionChance = corruptionChance;
 		killMe = false;
 		if(packetLogging)
 		{
@@ -100,7 +106,6 @@ public class UDPServer implements Runnable {
 		boolean checksumHealthy;
 		
 		checksum = calculateChecksum( data, false );
-		checksum = bitsCorrupted( checksum, 30);
 		if( (~(packet[2] ^ checksum[0]) == 0) && (~(packet[3] ^ checksum[1]) == 0) ){
 			checksumHealthy = true;
 		} else {
@@ -112,19 +117,25 @@ public class UDPServer implements Runnable {
 		if(checksumHealthy){
 			return data;
 		} else {
+			//TODO handle a bad checksum
 			return data;
 		}
 			
 	}
 	
-	private byte[] addPacketHeader(int packetSize, byte[] readData ){
-		
+	
+	private byte[] addPacketHeader(byte[] readData ){
+		int packetSize = readData.length;
 		byte[] packet = new byte[packetSize + HEADER_SIZE];
 		
+		byte[] maybeCorruptedData = corruptDataMaybe(readData, corruptionChance);
+		//copies maybe-corrupted into the new packet
 		for ( int i = 0; i < packetSize; i++){
-			packet[i + HEADER_SIZE] = readData[i];
+			packet[i + HEADER_SIZE] = maybeCorruptedData[i];
 		}
 		
+		//puts appropriate fields into the header.
+		//calculates the checksum based off of the definitely-not-corrupted readData
 		byte[] checksum = new byte[2];
 		checksum = calculateChecksum( readData , true );
 		packet[2] = checksum[0];
@@ -142,6 +153,9 @@ public class UDPServer implements Runnable {
 		return packet;
 	}
 	
+	/*
+	 * returns a byte[2] containing the current ACK number.
+	 */
 	private byte[] calculateAckNumber(){
 		byte[] ackNum = new byte[2];
 		ackNum[0] = 0;
@@ -186,13 +200,21 @@ public class UDPServer implements Runnable {
 		socket.send(sendPacket);
 	}
 	
-	private byte[] bitsCorrupted(byte[] checksum, int percentChance){
-		int isItCorrupted = (int) (Math.random()*100);
-		if( isItCorrupted <= percentChance ){
-			checksum[0] = (byte) (checksum[0] - 0x01);
-			return checksum;
+	/*
+	 * Rolls the dice and corrupts the data (adds a random bit flip) percentChance% of the time
+	 * Returns the a *new* copy of data that might have a bit error
+	 */
+	private byte[] corruptDataMaybe(byte[] data, double percentChance){
+		byte[] newData = data.clone();
+		if( Math.random()*100 < percentChance ){
+			//find a random bit to flip
+			int index = (int) Math.floor(Math.random() * newData.length);
+			int bit = (int) Math.floor(Math.random() * 8.0);
+			//actually flips the bit
+			newData[index] = (byte) (newData[index] ^ (1 << bit));
+			return newData;
 		} else {
-			return checksum;
+			return newData;
 		}
 	}
 		
@@ -263,7 +285,7 @@ public class UDPServer implements Runnable {
 			String sendString = "Ready";
 			byte[] sendData = sendString.getBytes();
 			packet = new byte[sendData.length + HEADER_SIZE];
-			packet = addPacketHeader( sendData.length , sendData );			
+			packet = addPacketHeader(sendData);			
 			transmitPacket( packet, serverSocket, IPAddress); 
 			
 			
@@ -288,6 +310,8 @@ public class UDPServer implements Runnable {
 					//TODO
 				}
 				packets_received++;
+				
+				//TODO send ACK packet or not.
 			}
 			
 			log("SERVER: Got " + packets_received + " packets");
@@ -310,7 +334,7 @@ public class UDPServer implements Runnable {
 			byte[] endData;
 			endData = sendString.getBytes();
 			packet = new byte[endData.length + HEADER_SIZE];
-			packet = addPacketHeader( endData.length, endData );
+			packet = addPacketHeader(endData);
 			transmitPacket( packet, serverSocket, IPAddress);
 			
 			

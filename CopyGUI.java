@@ -28,6 +28,13 @@ public class CopyGUI extends Frame {
 	String clientFile;
 	FileDialog fc;
 	
+	CheckboxGroup lossGroup;
+	Container lossContainer;
+	Checkbox noLoss;
+	Checkbox ackError;
+	Checkbox dataError;
+	TextField errorPercentage;
+	
 	Button startServer; //buttons to start server and client
 	Button startClient;
 	
@@ -59,7 +66,21 @@ public class CopyGUI extends Frame {
 			new JOptionPane("Port number could not be parsed to Int. Default value used (9999)", JOptionPane.ERROR_MESSAGE);
 		}
 		
-		client = new UDPClient(clientFile, port, clientLogging.getState());
+		//determine what to send to the Client as the error level
+		double error = 0;
+		if(noLoss.getState())
+		{
+			error = 0;
+		}
+		else if(dataError.getState())
+		{
+			error = Double.parseDouble(errorPercentage.getText());
+		}
+		else if(ackError.getState())
+		{
+			error = 0;
+		}
+		client = new UDPClient(clientFile, port, clientLogging.getState(), error);
 		//make the thread
 		clientThread = new Thread(client);
 		clientThread.start();
@@ -79,7 +100,22 @@ public class CopyGUI extends Frame {
 		} catch (NumberFormatException e) {
 			new JOptionPane("Port number could not be parsed to Int. Default value used (9999).", JOptionPane.ERROR_MESSAGE);
 		}
-		server = new UDPServer(serverField.getText(), port, serverLogging.getState());
+		
+		//determine what to send to the Server as the error level
+		double error = 0;
+		if(noLoss.getState())
+		{
+			error = 0;
+		}
+		else if(dataError.getState())
+		{
+			error = 0;
+		}
+		else if(ackError.getState())
+		{
+			error = Double.parseDouble(errorPercentage.getText());
+		}		
+		server = new UDPServer(serverField.getText(), port, serverLogging.getState(), error);
 		
 		//make the thread
 		serverThread = new Thread(server);
@@ -124,7 +160,7 @@ public class CopyGUI extends Frame {
 	 */
 	public CopyGUI()
 	{
-		//create objects	
+		//create GUI widgets	
 		portLabel = new Label("Port #");
 		portField = new TextField("9878", 4);
 		
@@ -139,6 +175,16 @@ public class CopyGUI extends Frame {
 		fc = new FileDialog(this, "Choose an image", FileDialog.LOAD);
 		clientFile = null;
 		
+		lossGroup = new CheckboxGroup();
+		lossContainer = new Panel();
+		noLoss = new Checkbox("No Loss", lossGroup, true);
+		ackError = new Checkbox("ACK error", lossGroup, false);
+		dataError = new Checkbox("Data error", lossGroup, false);
+		lossContainer.add(noLoss);
+		lossContainer.add(ackError);
+		lossContainer.add(dataError);
+		errorPercentage = new TextField("Error Rate (%%)", 2);
+		
 		startServer = new Button("Start Server");		
 		startClient = new Button("Start Client");
 		
@@ -152,6 +198,8 @@ public class CopyGUI extends Frame {
 		add(serverLogging);
 		add(clientIm);
 		add(fcButton);
+		add(lossContainer);
+		add(errorPercentage); //spacer
 		add(startServer);
 		add(startClient);
 		
@@ -224,7 +272,7 @@ public class CopyGUI extends Frame {
 			}
 		});
 		setTitle("Image Transfer-er");
-		setSize(450,200);
+		setSize(600,200);
 		setVisible(true);
 	}
 	

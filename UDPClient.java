@@ -10,6 +10,8 @@ public class UDPClient implements Runnable{
 	private final int DATA_SIZE = PACKET_SIZE - HEADER_SIZE; //set packet size
 	String imageName;
 	int port;
+	double corruptionChance;
+	
 	DatagramSocket clientSocket;
 	boolean packetLogging;
 	volatile boolean killMe; //set true to exit as fast as possible
@@ -53,11 +55,14 @@ public class UDPClient implements Runnable{
 		}
 	}
 	
-	public UDPClient(String image, int portNum, boolean logging)
+	public UDPClient(String image, int portNum, boolean logging, double corruptionChance)
 	{
 		port = portNum;
 		imageName = image;
 		packetLogging = logging;
+		this.corruptionChance = corruptionChance;
+		
+		killMe = false;
 		if(logging)
 		{
 			try {
@@ -80,13 +85,6 @@ public class UDPClient implements Runnable{
 		fis.close();
 		return number_of_packets;
 	}
-
-/*
-	public static void main(String args[]) throws Exception {
-		UDPClient c = new UDPClient("client_image.jpg", 9878, false);
-		c.transferImage();
-	}
-*/	
 	
 	private void transmitPacket(byte[] packet, DatagramSocket socket ) throws Exception{
 		
@@ -96,12 +94,14 @@ public class UDPClient implements Runnable{
 		
 	}
 	
-	private byte[] addPacketHeader(int packetSize, byte[] readData ){
-		
+	private byte[] addPacketHeader(byte[] readData ){
+		int packetSize = readData.length;
 		byte[] packet = new byte[packetSize + HEADER_SIZE];
 		
+		//copies over data from maybe corrupted data
+		byte[] maybeCorrupted = corruptDataMaybe(readData, corruptionChance);
 		for ( int i = 0; i < packetSize; i++){
-			packet[i + HEADER_SIZE] = readData[i];
+			packet[i + HEADER_SIZE] = maybeCorrupted[i];
 		}
 		
 		byte[] checksum = new byte[2];
@@ -151,6 +151,20 @@ public class UDPClient implements Runnable{
 		return checksum;
 	}
 	
+	private byte[] corruptDataMaybe(byte[] data, double percentChance){
+		byte[] newData = data.clone();
+		if( Math.random()*100 < percentChance ){
+			//find a random bit to flip
+			int index = (int) Math.floor(Math.random() * newData.length);
+			int bit = (int) Math.floor(Math.random() * 8.0);
+			//actually flips the bit
+			newData[index] = (byte) (newData[index] ^ (1 << bit));
+			return newData;
+		} else {
+			return newData;
+		}
+	}
+	
 	private byte[] calculateAckNumber(){
 		byte[] ackNum = new byte[2];
 		ackNum[0] = 0;
@@ -183,7 +197,7 @@ public class UDPClient implements Runnable{
 		int packet_length = String.valueOf(num_packets).getBytes().length;
 		packet = new byte[packet_length];
 		packet = String.valueOf(num_packets).getBytes();
-		packet = addPacketHeader( packet_length, packet );
+		packet = addPacketHeader(packet);
 		transmitPacket(packet, clientSocket);
 				
 		
@@ -219,7 +233,7 @@ public class UDPClient implements Runnable{
 			}
 			//System.out.println(data_size);
 			packet = new byte[data_size + HEADER_SIZE];
-			packet = addPacketHeader( data_size, readData );
+			packet = addPacketHeader(readData);
 			transmitPacket(packet, clientSocket);
 		}
 		
