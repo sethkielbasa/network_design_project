@@ -42,9 +42,14 @@ public class UDPClient implements Runnable{
 		killMe = true;
 	}
 	
+	/*
+	 * Called automatically whenever the object is destroyed
+	 */
 	@Override
 	protected void finalize()
 	{
+		if(clientSocket != null && !clientSocket.isClosed())
+			clientSocket.close();
 		if(packetLogging)
 		{
 			try {
@@ -186,32 +191,29 @@ public class UDPClient implements Runnable{
 		
 		clientSocket = new DatagramSocket();	
 		byte[] packet;
-		
-		
+
 				
 		//Send amount packets to expect to the server
-		int num_packets = getNumberOfPacketsToSend( imageName ); //get number of packets
+		int num_packets = getNumberOfPacketsToSend( imageName ); //get number of packets in the image
 		log( "CLIENT: Going to send " + num_packets + " packets");
 		
-		
-		int packet_length = String.valueOf(num_packets).getBytes().length;
+		//TODO	Make this standard packet size
+		//TODO add standard header and sequence number to this packet
+		int packet_length = String.valueOf(num_packets).getBytes().length; //length of string version of number of packets
 		packet = new byte[packet_length];
 		packet = String.valueOf(num_packets).getBytes();
 		packet = addPacketHeader(packet);
 		transmitPacket(packet, clientSocket);
 				
 		
-		while(true && !killMe){
-			packet = new byte[PACKET_SIZE];
-			DatagramPacket receivePacket = new DatagramPacket(packet, packet.length);
-			try{
-				clientSocket.receive(receivePacket);
-			} catch (SocketException e) {
-				log("Socket port closed externally");
-			}
-			break;
+		packet = new byte[PACKET_SIZE];
+		DatagramPacket receivePacket = new DatagramPacket(packet, packet.length);
+		try{
+			clientSocket.receive(receivePacket);
+		} catch (SocketException e) {
+			log("Socket port closed externally");
 		}
-		
+		//TODO check to see if ACK received OK 
 		
 		FileInputStream fis = new FileInputStream( imageName );		
 		log( "CLIENT: Sending packets");
@@ -231,42 +233,21 @@ public class UDPClient implements Runnable{
 			if (flag == -1){ //if end of file is reached
 				break;
 			}
-			//System.out.println(data_size);
+
 			packet = new byte[data_size + HEADER_SIZE];
+			//TODO keep track of sequenceNumber
+			//TODO Add seqNum to Header
 			packet = addPacketHeader(readData);
 			transmitPacket(packet, clientSocket);
+			
+			//TODO wait for ACK
+			//TODO if wrong seq. num in ACK/checksum is corrupt, retransmit, else continue
 		}
 		
 		
 		fis.close();
 		
-		/*
-		 * 
-		 *  Following code taken from
-		 *  https://lowell.umassonline.net/bbcswebdav/pid-305360-dt-content-rid-977475_1/courses/L2710-11029/Sockets.pdf
-		 * 
-		 */
-		log("CLIENT: Waiting for server response");
-		
-		packet = new byte[PACKET_SIZE];
-		DatagramPacket receivePacket = new DatagramPacket(packet, packet.length);
-		try{
-			clientSocket.receive(receivePacket);
-		} catch (SocketException e) {
-			log("Socket port closed externally");
-		}
-		
-		String serverResponse = new String(receivePacket.getData());
-		
-		int packetLength = packet[4] & 0xFF;
-		packetLength = packetLength << 8;
-		packetLength = packetLength | (packet [5] & 0xFF);
-		log("FROM SERVER: " + serverResponse.substring( HEADER_SIZE , HEADER_SIZE + packetLength ));
-		
-		//Close the log
-		if(packetLogging)
-			out.close();
-		clientSocket.close();
+		finalize();
 }
 
 	@Override
