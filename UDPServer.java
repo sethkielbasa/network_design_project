@@ -26,19 +26,29 @@ public class UDPServer implements Runnable {
 	 * If packetLogging is enabled, log messages to file and timestamps them.
 	 * Otherwise, puts them out to System.out
 	 */
-	private void log(String logmsg) throws IOException
+	private void log(String logmsg) 
 	{
 		if(packetLogging)
 		{
 			long nowTime = System.currentTimeMillis();
-			out.write(Long.toString(nowTime) + ": " +logmsg + "\r\n");
+			try {
+				out.write(Long.toString(nowTime) + ": " +logmsg + "\r\n");
+			} catch (IOException e) {
+				System.out.println("Couldn't write to log file. Logging disabled");
+				packetLogging = false;
+				e.printStackTrace();
+			}
 		}
 		System.out.println(logmsg);
 	}
 	
+	/*
+	 * Called automatically whenever the object is destroyed
+	 */
 	@Override
 	protected void finalize()
 	{
+		serverSocket.close();
 		if(packetLogging)
 		{
 			try {
@@ -50,7 +60,7 @@ public class UDPServer implements Runnable {
 	}
 	
 	/*
-	 * Craetes a new server
+	 * Creates a new server
 	 * if logging is enabled, creates a new log file and writes packet messages to them.
 	 */
 	public UDPServer(String image, int portNum, boolean logging, double corruptionChance) 
@@ -72,7 +82,7 @@ public class UDPServer implements Runnable {
 	}
 	
 	/*
-	 * Tell the server to stop listening to the port and finish asap
+	 * Tell the server to stop listening to the port and die asap
 	 */
 	public void killServer()
 	{
@@ -80,23 +90,19 @@ public class UDPServer implements Runnable {
 			serverSocket.close();
 		killMe = true;
 	}
-/*	
-	public static void main(String args[]) throws Exception 
-	{
-		UDPServer s = new UDPServer("server_image.jpg", 9878, false);
-		s.receiveImage();
-	}
-*/
 	
+	/*
+	 * Extract the data from a packet.
+	 * Also compute its checksum and calculate if it is bad.
+	 * Returns null if the checksum is bad
+	 */
 	private byte[] destructPacket ( byte[] packet ){
 		
 		byte[] ackNumber = new byte[2];
 		byte[] checksum = new byte[2];
 		byte[] length = new byte[2];
 		
-		int packetLength = packet[4] & 0xFF;
-		packetLength = packetLength << 8;
-		packetLength = packetLength | (packet [5] & 0xFF);
+		int packetLength = getPacketLength( packet);
 		
 		byte[] data = new byte[packetLength];	
 		for( int i = 0; i < packetLength; i++){
@@ -117,14 +123,58 @@ public class UDPServer implements Runnable {
 		if(checksumHealthy){
 			return data;
 		} else {
-			//TODO handle a bad checksum
-			return data;
+			return null;
 		}
 			
 	}
+
 	
+	/*
+	 * Returns the sequence number field of the packet.
+	 */
+	private int getSequenceNumber(byte[] packet)
+	{
+		return packet[0] + (packet[1] << 8);
+	}
 	
-	private byte[] addPacketHeader(byte[] readData ){
+	/*
+	 * Returns the packetLength field of the packet header
+	 */
+	private int getPacketLength(byte[] packet)
+	{
+		int packetLength = packet[4] & 0xFF;
+		packetLength = packetLength << 8;
+		packetLength = packetLength | (packet [5] & 0xFF);
+		return packetLength;
+	}
+	
+	/*
+	 * Given a packet, assuming its checksum is good,
+	 * return the next sequence number to expect from the client
+	 */
+	private int getIncrementedSequenceNumber(byte[] packet)
+	{
+		int seq = getSequenceNumber(packet);
+		if(seq == 0)
+		{
+			return 1;
+		}
+		else if(seq == 1)
+		{
+			return 0;
+		}
+		else
+		{
+			log("SERVER: Weird sequence number found: " + Integer.toString(seq));
+		}
+		return 0;
+	}
+	
+	/*
+	 * Given packet data and an ACK number,
+	 * make a new packet
+	 */
+	private byte[] addPacketHeader(byte[] readData, int ackNumber){
 		int packetSize = readData.length;
 		byte[] packet = new byte[packetSize + HEADER_SIZE];
 		
@@ -141,28 +191,16 @@ public class UDPServer implements Runnable {
 		packet[2] = checksum[0];
 		packet[3] = checksum[1];
 		
-		byte[] ackNumber = new byte[2];
-		ackNumber = calculateAckNumber();
-		packet[0] = ackNumber[0];
-		packet[1] = ackNumber[1];
+		packet[0] = (byte) ((ackNumber >> 8) & 0xFF); //msbFirst
+		packet[1] = (byte) (ackNumber & 0xFF);
 		
 		assert ( packetSize > PACKET_SIZE );
+		packet[4] = (byte) ((packetSize >> 8) & 0xFF); //msbFirst
 		packet[5] = (byte) (packetSize & 0xFF);
-		packet[4] = (byte) ((packetSize >> 8) & 0xFF);
 		
 		return packet;
 	}
 	
-	/*
-	 * returns a byte[2] containing the current ACK number.
-	 */
-	private byte[] calculateAckNumber(){
-		byte[] ackNum = new byte[2];
-		ackNum[0] = 0;
-		ackNum[1] = 0;
-		
-		return ackNum;
-	}
 	
 	private byte[] calculateChecksum( byte[] readData, boolean invertFlag ){
 		byte[] checksum = new byte[2];
@@ -250,6 +288,7 @@ public class UDPServer implements Runnable {
 					e.printStackTrace();
 				}
 			}
+			
 			/*
 			 * 
 			 *  Following code taken from
@@ -257,42 +296,71 @@ public class UDPServer implements Runnable {
 			 * 
 			 */
 			
-			
-			packet = new byte[1028];
-			receivePacket = new DatagramPacket(packet, packet.length);
-			try{
-				serverSocket.receive(receivePacket);
-			} catch (SocketException e) {
-				log("Socket port closed externally");
-				break;
-			}
-		
-			data = new String(receivePacket.getData());
-			
-			int packetLength = packet[4] & 0xFF;
-			packetLength = packetLength << 8;
-			packetLength = packetLength | (packet [5] & 0xFF);
-			
-			data = data.substring( HEADER_SIZE , HEADER_SIZE + packetLength );
-						
-			int packets_expected = Integer.parseInt(data, 10);
+			//Receives the first packet
+			packet = new byte[PACKET_SIZE];
+			int seqNum = 0;
+			int expectedSeqNum = 0;
+			int oldSeqNum = 0;
 			int packets_received = 0;
-			log("SERVER: Waiting for " + packets_expected + " packets");
+			int packets_expected = 0;
+			//loop until a valid first packet is received
+			while(true)
+			{
+				receivePacket = new DatagramPacket(packet, packet.length);
+				try{
+					serverSocket.receive(receivePacket);
+				} catch (SocketException e) {
+					log("Socket port closed externally");
+					break;
+				}
 			
-			IPAddress = receivePacket.getAddress();
-			port = receivePacket.getPort();
+				seqNum = getSequenceNumber(packet);
+				expectedSeqNum = seqNum;
+				oldSeqNum = getIncrementedSequenceNumber(packet);
+				
+				//converts the received packet into a String
+				data = new String(receivePacket.getData());
+				
+				int packetLength = getPacketLength(packet);
+				
+				data = data.substring( HEADER_SIZE , HEADER_SIZE + packetLength );
+							
+				packets_expected = Integer.parseInt(data, 10);
+				packets_received = 0;
+				log("SERVER: Waiting for " + packets_expected + " packets");
+				
+				IPAddress = receivePacket.getAddress();
+				port = receivePacket.getPort();
+				
+				byte[] packetData = destructPacket( packet );
+				seqNum = getSequenceNumber(packet);
+				
+				if(packetData != null && seqNum == expectedSeqNum)
+				{
+					//make a new packet with right ACK num and send it
+					byte[] sendPacket = addPacketHeader(new byte[DATA_SIZE], seqNum);
+					transmitPacket(sendPacket, serverSocket, IPAddress);
+					//increment state
+					oldSeqNum = seqNum;
+					expectedSeqNum = getIncrementedSequenceNumber(packet);
+					break;
+				} else {
+					log("SERVER: back checksum on first packet");
+					byte[] sendPacket = addPacketHeader(new byte[DATA_SIZE], oldSeqNum);
+					transmitPacket(sendPacket, serverSocket, IPAddress);
+					//repeat(don't break) without incrementing state if bad
+					
+				}
+			}
 			
-			String sendString = "Ready";
-			byte[] sendData = sendString.getBytes();
-			packet = new byte[sendData.length + HEADER_SIZE];
-			packet = addPacketHeader(sendData);			
-			transmitPacket( packet, serverSocket, IPAddress); 
-			
-			
+			//packet is good, open image file for writing.
 			FileOutputStream fos = new FileOutputStream(imageName); //Open output file
-			
+
+
 			log("SERVER: Ready for packets");
-			while ( packets_received < packets_expected & !killMe){
+			while ( packets_received < packets_expected && !killMe){
+				
+				//wait for the client to send something
 				packet = new byte[PACKET_SIZE];
 				receivePacket = new DatagramPacket(packet, packet.length);
 				try{
@@ -301,17 +369,28 @@ public class UDPServer implements Runnable {
 					log("Socket port closed externally");
 					break;
 				}
-				byte[] packetData = destructPacket( packet );
 				
-				if ( packetData != null){
+				//extracts data. Data is null if checksum is bad.
+				byte[] packetData = destructPacket( packet );
+				seqNum = getSequenceNumber(packet);
+				
+				//data is not corrupt and has expected sequence number
+				if ( packetData != null && seqNum == expectedSeqNum){
+					//deliver packet and increment state
 					fos.write(packetData);
+					//make a new ACK with seqnum= ACK
+					byte[] sendPacket = addPacketHeader(new byte[DATA_SIZE], seqNum);
+					transmitPacket(sendPacket, serverSocket, IPAddress);
+					//Increment state
+					oldSeqNum = seqNum;
+					expectedSeqNum = getIncrementedSequenceNumber(packet);
 				} else {
-					System.out.println("SERVER: Null packet :( ");
-					//TODO
+					log("SERVER: Bad Checksum or Bad Sequence num:( ");
+					//send the old sendPacket with the previous sequence number
+					byte[] sendPacket = addPacketHeader(new byte[DATA_SIZE], oldSeqNum);
+					transmitPacket(sendPacket, serverSocket, IPAddress);
 				}
 				packets_received++;
-				
-				//TODO send ACK packet or not.
 			}
 			
 			log("SERVER: Got " + packets_received + " packets");
@@ -319,25 +398,7 @@ public class UDPServer implements Runnable {
 				out.close();
 			fos.close();
 			
-
-			System.out.println(corruptedCounter + " checksums corrupted :'(");
-			
-			/*
-			 * 
-			 *  Following code taken from
-			 *  https://lowell.umassonline.net/bbcswebdav/pid-305360-dt-content-rid-977475_1/courses/L2710-11029/Sockets.pdf
-			 * 
-			 */
-			IPAddress = receivePacket.getAddress();
-			port = receivePacket.getPort();
-			sendString = String.valueOf(packets_received + " packets received");
-			byte[] endData;
-			endData = sendString.getBytes();
-			packet = new byte[endData.length + HEADER_SIZE];
-			packet = addPacketHeader(endData);
-			transmitPacket( packet, serverSocket, IPAddress);
-			
-			
+			log("SERVER: " + corruptedCounter + " checksums corrupted :'(");
 		}
 	}
 
