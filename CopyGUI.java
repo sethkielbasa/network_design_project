@@ -33,6 +33,7 @@ public class CopyGUI extends Frame {
 	Checkbox noLoss;
 	Checkbox ackError;
 	Checkbox dataError;
+	Label errorLabel;
 	TextField errorPercentage;
 	
 	Button startServer; //buttons to start server and client
@@ -167,8 +168,8 @@ public class CopyGUI extends Frame {
 		serverIm = new Label("Server Image Name");
 		serverField = new TextField("server_image.jpg");
 		
-		clientLogging = new Checkbox("Client Logging");
-		serverLogging = new Checkbox("Server Logging");
+		clientLogging = new Checkbox("Client Logging", true);
+		serverLogging = new Checkbox("Server Logging", true);
 		
 		clientIm = new Label("Image name:");
 		fcButton = new Button("Choose file to Send");
@@ -183,7 +184,9 @@ public class CopyGUI extends Frame {
 		lossContainer.add(noLoss);
 		lossContainer.add(ackError);
 		lossContainer.add(dataError);
-		errorPercentage = new TextField("Error Rate (%%)", 2);
+		
+		errorLabel = new Label("Error rate (%%)");
+		errorPercentage = new TextField("00", 2);
 		
 		startServer = new Button("Start Server");		
 		startClient = new Button("Start Client");
@@ -199,7 +202,9 @@ public class CopyGUI extends Frame {
 		add(clientIm);
 		add(fcButton);
 		add(lossContainer);
-		add(errorPercentage); //spacer
+		add(new Panel()); //spacer
+		add(errorLabel);
+		add(errorPercentage); 
 		add(startServer);
 		add(startClient);
 		

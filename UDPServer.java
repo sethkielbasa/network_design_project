@@ -36,7 +36,6 @@ public class UDPServer implements Runnable {
 			} catch (IOException e) {
 				System.out.println("Couldn't write to log file. Logging disabled");
 				packetLogging = false;
-				e.printStackTrace();
 			}
 		}
 		System.out.println(logmsg);
@@ -54,7 +53,7 @@ public class UDPServer implements Runnable {
 			try {
 				out.close();
 			} catch (IOException e) {
-				e.printStackTrace();
+				System.out.println("Exception closing log");
 			}
 		}
 	}
@@ -98,10 +97,7 @@ public class UDPServer implements Runnable {
 	 */
 	private byte[] destructPacket ( byte[] packet ){
 		
-		byte[] ackNumber = new byte[2];
 		byte[] checksum = new byte[2];
-		byte[] length = new byte[2];
-		
 		int packetLength = getPacketLength( packet);
 		
 		byte[] data = new byte[packetLength];	
@@ -109,20 +105,11 @@ public class UDPServer implements Runnable {
 			data[i] = packet[ i + HEADER_SIZE ];
 		}
 		
-		boolean checksumHealthy;
-		
 		checksum = calculateChecksum( data, false );
 		if( (~(packet[2] ^ checksum[0]) == 0) && (~(packet[3] ^ checksum[1]) == 0) ){
-			checksumHealthy = true;
-		} else {
-			corruptedCounter++;
-			checksumHealthy = false;
-		}
-		
-		
-		if(checksumHealthy){
 			return data;
 		} else {
+			corruptedCounter++;
 			return null;
 		}
 			
@@ -134,7 +121,7 @@ public class UDPServer implements Runnable {
 	 */
 	private int getSequenceNumber(byte[] packet)
 	{
-		return packet[0] + (packet[1] << 8);
+		return packet[1] + (packet[0] << 8);
 	}
 	
 	/*
@@ -279,15 +266,6 @@ public class UDPServer implements Runnable {
 			data = null;
 			IPAddress = null;
 			
-			if(packetLogging)
-			{
-				try {
-					out = new FileWriter("ServerLog.txt");
-					out.write("Logging Server packet traffic:\r\n\r\n");
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
-			}
 			
 			/*
 			 * 
@@ -303,7 +281,7 @@ public class UDPServer implements Runnable {
 			int oldSeqNum = 0;
 			int packets_received = 0;
 			int packets_expected = 0;
-			//loop until a valid first packet is received
+						
 			while(true)
 			{
 				receivePacket = new DatagramPacket(packet, packet.length);
@@ -319,11 +297,8 @@ public class UDPServer implements Runnable {
 				oldSeqNum = getIncrementedSequenceNumber(packet);
 				
 				//converts the received packet into a String
-				data = new String(receivePacket.getData());
-				
-				int packetLength = getPacketLength(packet);
-				
-				data = data.substring( HEADER_SIZE , HEADER_SIZE + packetLength );
+				data = new String(destructPacket(receivePacket.getData()), "US-ASCII");
+				log("SERVER: Received " + data);
 							
 				packets_expected = Integer.parseInt(data, 10);
 				packets_received = 0;
@@ -332,15 +307,11 @@ public class UDPServer implements Runnable {
 				IPAddress = receivePacket.getAddress();
 				port = receivePacket.getPort();
 				
-				byte[] packetData = destructPacket( packet );
-				seqNum = getSequenceNumber(packet);
-				
-				if(packetData != null && seqNum == expectedSeqNum)
+				if(data != null && seqNum == expectedSeqNum)
 				{
 					//make a new packet with right ACK num and send it
 					byte[] sendPacket = addPacketHeader(new byte[DATA_SIZE], seqNum);
 					transmitPacket(sendPacket, serverSocket, IPAddress);
-					//increment state
 					oldSeqNum = seqNum;
 					expectedSeqNum = getIncrementedSequenceNumber(packet);
 					break;
@@ -371,34 +342,39 @@ public class UDPServer implements Runnable {
 				}
 				
 				//extracts data. Data is null if checksum is bad.
-				byte[] packetData = destructPacket( packet );
 				seqNum = getSequenceNumber(packet);
+				byte[] packetData = destructPacket( packet );
+				
+				log("SERVER: Got packet:" + seqNum);
 				
 				//data is not corrupt and has expected sequence number
 				if ( packetData != null && seqNum == expectedSeqNum){
 					//deliver packet and increment state
 					fos.write(packetData);
 					//make a new ACK with seqnum= ACK
+					log("SERVER: Packet was good, send ACK with " + seqNum);
 					byte[] sendPacket = addPacketHeader(new byte[DATA_SIZE], seqNum);
 					transmitPacket(sendPacket, serverSocket, IPAddress);
 					//Increment state
 					oldSeqNum = seqNum;
 					expectedSeqNum = getIncrementedSequenceNumber(packet);
+					packets_received++; //increment the good packet count
 				} else {
-					log("SERVER: Bad Checksum or Bad Sequence num:( ");
+					log("SERVER: Bad Checksum or Bad Sequence num:(. Send ACK with " +oldSeqNum);
 					//send the old sendPacket with the previous sequence number
 					byte[] sendPacket = addPacketHeader(new byte[DATA_SIZE], oldSeqNum);
 					transmitPacket(sendPacket, serverSocket, IPAddress);
 				}
-				packets_received++;
+				
 			}
 			
 			log("SERVER: Got " + packets_received + " packets");
+			log("SERVER: " + corruptedCounter + " checksums corrupted :'(");
+			
 			if(packetLogging)
 				out.close();
 			fos.close();
 			
-			log("SERVER: " + corruptedCounter + " checksums corrupted :'(");
 		}
 	}
 
