@@ -12,6 +12,9 @@ public class UDPClient implements Runnable{
 	int port;
 	double corruptionChance;
 	
+	long startTime;
+	long endTime;
+	
 	DatagramSocket clientSocket;
 	boolean packetLogging;
 	volatile boolean killMe; //set true to exit as fast as possible
@@ -30,13 +33,13 @@ public class UDPClient implements Runnable{
 			try {
 				out.write(Long.toString(nowTime) + ": " +logmsg + "\r\n");
 			} catch (IOException e) {
-				System.out.println("Couldn't write to log file. Logging disabled");
+				//System.out.println("Couldn't write to log file. Logging disabled");
 				packetLogging = false;
 				e.printStackTrace();
 			}
 		}
 		
-		System.out.println(logmsg);
+		//System.out.println(logmsg);
 	}
 	
 	/*
@@ -95,6 +98,7 @@ public class UDPClient implements Runnable{
 		imageName = image;
 		packetLogging = logging;
 		this.corruptionChance = corruptionChance;
+		
 		corruptedCounter = 0;
 		
 		killMe = false;
@@ -119,7 +123,7 @@ public class UDPClient implements Runnable{
 	
 	private int getNumberOfPacketsToSend(String file_to_send) throws IOException{
 		int number_of_packets = 0;
-		System.out.println(file_to_send);
+		//System.out.println(file_to_send);
 		FileInputStream fis = new FileInputStream( file_to_send ); //Open file to send
 		number_of_packets = (fis.available() / DATA_SIZE); //size of file divided by packet size
 		if ( fis.available() % DATA_SIZE > 0){ //if there are bytes leftover
@@ -142,6 +146,7 @@ public class UDPClient implements Runnable{
 		byte[] packet = new byte[packetSize + HEADER_SIZE];
 		
 		//copies over data from maybe corrupted data
+		log(String.valueOf(corruptionChance));
 		byte[] maybeCorrupted = corruptDataMaybe(readData, corruptionChance);
 		for ( int i = 0; i < packetSize; i++){
 			packet[i + HEADER_SIZE] = maybeCorrupted[i];
@@ -219,6 +224,7 @@ public class UDPClient implements Runnable{
 		if( (~(packet[2] ^ checksum[0]) == 0) && (~(packet[3] ^ checksum[1]) == 0) ){
 			return data;
 		} else {
+			log("CLIENT: Checksum failed");
 			corruptedCounter++;
 			return null;
 		}
@@ -261,7 +267,7 @@ public class UDPClient implements Runnable{
 		 */
 		
 		//Socket setup 
-		
+		startTime = System.currentTimeMillis();
 		clientSocket = new DatagramSocket();	
 		byte[] sendPacket = null;		//packet (with header) sent to the server
 		byte[] receivePacket = null; 	//packet (with header) received from the server
@@ -274,7 +280,7 @@ public class UDPClient implements Runnable{
 		
 		//Send amount packets to expect to the server
 		int num_packets = getNumberOfPacketsToSend( imageName ); //get number of packets in the image
-		log( "CLIENT: Going to send " + num_packets + " packets");
+		
 		
 		int packet_length = String.valueOf(num_packets).getBytes("US-ASCII").length; //length of string version of number of packets
 		byte[] data = new byte[packet_length];
@@ -283,6 +289,7 @@ public class UDPClient implements Runnable{
 		//stay in this state until the condition to advance is met
 		do
 		{
+			log( "CLIENT: Going to send " + num_packets + " packets");
 			sendPacket = addPacketHeader(data, sequenceNumber);
 			oldSequenceNumber = getIncrementedSequenceNumber(sendPacket);
 			
@@ -354,6 +361,12 @@ public class UDPClient implements Runnable{
 				receivedAckNumber = getSequenceNumber(receivePacket);
 				receivedData = destructPacket(receivePacket);
 				log("CLIENT: Received ACK: " + receivedAckNumber);
+				if(receivedData !=null){
+					//System.out.println(receivedData.length);
+				}
+				else{
+					//System.out.println("Null data");
+				}
 			}while(receivedData == null || receivedAckNumber != sequenceNumber);
 			
 			//increment state and continue
@@ -365,7 +378,8 @@ public class UDPClient implements Runnable{
 		
 		
 		fis.close();
-		
+		endTime = System.currentTimeMillis() - startTime;
+		System.out.println("Time : " + endTime);
 		finalize();
 }
 

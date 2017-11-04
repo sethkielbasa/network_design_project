@@ -34,11 +34,11 @@ public class UDPServer implements Runnable {
 			try {
 				out.write(Long.toString(nowTime) + ": " +logmsg + "\r\n");
 			} catch (IOException e) {
-				System.out.println("Couldn't write to log file. Logging disabled");
+				//System.out.println("Couldn't write to log file. Logging disabled");
 				packetLogging = false;
 			}
 		}
-		System.out.println(logmsg);
+		//System.out.println(logmsg);
 	}
 	
 	/*
@@ -53,7 +53,7 @@ public class UDPServer implements Runnable {
 			try {
 				out.close();
 			} catch (IOException e) {
-				System.out.println("Exception closing log");
+				//System.out.println("Exception closing log");
 			}
 		}
 	}
@@ -68,6 +68,7 @@ public class UDPServer implements Runnable {
 		port = portNum;
 		packetLogging = logging;
 		this.corruptionChance = corruptionChance;
+		
 		killMe = false;
 		if(packetLogging)
 		{
@@ -165,6 +166,7 @@ public class UDPServer implements Runnable {
 		int packetSize = readData.length;
 		byte[] packet = new byte[packetSize + HEADER_SIZE];
 		
+		log(String.valueOf(corruptionChance));
 		byte[] maybeCorruptedData = corruptDataMaybe(readData, corruptionChance);
 		//copies maybe-corrupted into the new packet
 		for ( int i = 0; i < packetSize; i++){
@@ -297,10 +299,13 @@ public class UDPServer implements Runnable {
 				oldSeqNum = getIncrementedSequenceNumber(packet);
 				
 				//converts the received packet into a String
-				data = new String(destructPacket(receivePacket.getData()), "US-ASCII");
+				if(destructPacket(receivePacket.getData()) != null){
+					data = new String(destructPacket(receivePacket.getData()), "US-ASCII");
+					packets_expected = Integer.parseInt(data, 10);
+				}
 				log("SERVER: Received " + data);
 							
-				packets_expected = Integer.parseInt(data, 10);
+				
 				packets_received = 0;
 				log("SERVER: Waiting for " + packets_expected + " packets");
 				
@@ -329,7 +334,7 @@ public class UDPServer implements Runnable {
 
 
 			log("SERVER: Ready for packets");
-			while ( packets_received < packets_expected && !killMe){
+			while ( packets_received < packets_expected+1 && !killMe){
 				
 				//wait for the client to send something
 				packet = new byte[PACKET_SIZE];
@@ -359,6 +364,7 @@ public class UDPServer implements Runnable {
 					oldSeqNum = seqNum;
 					expectedSeqNum = getIncrementedSequenceNumber(packet);
 					packets_received++; //increment the good packet count
+					log("SERVER: packet number " + packets_received);
 				} else {
 					log("SERVER: Bad Checksum or Bad Sequence num:(. Send ACK with " +oldSeqNum);
 					//send the old sendPacket with the previous sequence number
