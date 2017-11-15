@@ -131,7 +131,7 @@ public class CopyGUI extends Frame {
 		if(serverThread != null)
 		{
 			try{
-				server.killServer();
+				server.killThisAgent();
 				serverThread.join();
 			} catch (InterruptedException e) {
 				// TODO Auto-generated catch block
@@ -148,7 +148,7 @@ public class CopyGUI extends Frame {
 		if(clientThread != null)
 		{
 			try{
-				client.killClient();
+				client.killThisAgent();
 				clientThread.join();
 			} catch (InterruptedException e) {
 				// TODO Auto-generated catch block
