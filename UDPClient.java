@@ -6,10 +6,19 @@ public class UDPClient extends NetworkAgent{
 		
 	long startTime;
 	long endTime;
+	
+	int CLIENT_TIMEOUT = 30;
+	
+	int INIT = 0;
+	int SEND_PACKET = 1;
+	int WAIT = 2;
+	
+	int CLIENT_STATE = INIT;
+	
 
-	public UDPClient(String imageName, int port, boolean packetLogging, double corruptionChance)
+	public UDPClient(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance)
 	{
-		super("CLIENT: ", "ClientLog.txt", imageName, port, packetLogging, corruptionChance);
+		super("CLIENT: ", "ClientLog.txt", imageName, port, packetLogging, corruptionChance, dropChance);
 	}
 	
 	private int getNumberOfPacketsToSend(String file_to_send) throws IOException{
@@ -53,23 +62,37 @@ public class UDPClient extends NetworkAgent{
 		byte[] data = new byte[packet_length];
 		data = String.valueOf(num_packets).getBytes("US-ASCII");
 		
+
+		/*
+		while ( true ){
+			switch (CLIENT_STATE){
+			
+			}
+		}
+		*/
+		
 		//stay in this state until the condition to advance is met
 		do
 		{
 			log( "Going to send " + num_packets + " packets");
 			sendPacket = addPacketHeader(data, sequenceNumber);
-			
-			transmitPacket(sendPacket, myDatagramSocket);
-		
-			receivePacket = new byte[PACKET_SIZE];
-		
+					
 			//check to see if ACK received ok
+			if(dropPacket(dropChance)){
+				log("Data packet dropped");
+			} else {
+				transmitPacket(sendPacket, myDatagramSocket);
+			}
+			
+			receivePacket = new byte[PACKET_SIZE];
+			myDatagramSocket.setSoTimeout(CLIENT_TIMEOUT);
 			receiveDatagram = new DatagramPacket(receivePacket, receivePacket.length);
 			try{
 				myDatagramSocket.receive(receiveDatagram);
 			} catch (SocketException e) {
 				log("Socket port closed externally");
-				
+			} catch (InterruptedIOException e){
+				log("Client timeout");
 			}
 			
 			receivedAckNumber = getSequenceNumber(receivePacket);
@@ -111,16 +134,23 @@ public class UDPClient extends NetworkAgent{
 				sendPacket = new byte[data_size + HEADER_SIZE];
 				sendPacket = addPacketHeader(readData, sequenceNumber);
 				
-				transmitPacket(sendPacket, myDatagramSocket);
+				if(dropPacket(dropChance)){
+					log("Data packet dropped");
+				} else {
+					transmitPacket(sendPacket, myDatagramSocket);
+				}
+				
 				log("Sent packet: " + sequenceNumber);
 				
 				//check to see if ACK received ok
+				myDatagramSocket.setSoTimeout(CLIENT_TIMEOUT);
 				receiveDatagram = new DatagramPacket(receivePacket, receivePacket.length);
 				try{
 					myDatagramSocket.receive(receiveDatagram);
 				} catch (SocketException e) {
 					log("Socket port closed externally");
-					
+				} catch (InterruptedIOException e){
+					log("Client timeout");
 				}
 				
 				receivedAckNumber = getSequenceNumber(receivePacket);

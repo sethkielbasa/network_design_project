@@ -33,6 +33,8 @@ public class CopyGUI extends Frame {
 	Checkbox noLoss;
 	Checkbox ackError;
 	Checkbox dataError;
+	Checkbox ackDrop;
+	Checkbox dataDrop;
 	Label errorLabel;
 	TextField errorPercentage;
 	
@@ -69,19 +71,32 @@ public class CopyGUI extends Frame {
 		
 		//determine what to send to the Client as the error level
 		double error = 0;
+		double dropChance = 0;
 		if(noLoss.getState())
 		{
 			error = 0;
+			dropChance = 0;
 		}
 		else if(dataError.getState())
 		{
 			error = Double.parseDouble(errorPercentage.getText());
+			dropChance = 0;
 		}
 		else if(ackError.getState())
 		{
 			error = 0;
+			dropChance = 0;
 		}
-		client = new UDPClient(clientFile, port, clientLogging.getState(), error);
+		else if (dataDrop.getState()){
+			error = 0;
+			dropChance = Double.parseDouble(errorPercentage.getText());
+		} 
+		else if (ackDrop.getState()){
+			error = 0;
+			dropChance = 0;
+		}
+		
+		client = new UDPClient(clientFile, port, clientLogging.getState(), error, dropChance);
 		//make the thread
 		clientThread = new Thread(client);
 		clientThread.start();
@@ -104,19 +119,32 @@ public class CopyGUI extends Frame {
 		
 		//determine what to send to the Server as the error level
 		double error = 0;
+		double dropChance = 0;
 		if(noLoss.getState())
 		{
 			error = 0;
+			dropChance = 0;
 		}
 		else if(dataError.getState())
 		{
-			error = 0;
+			error = Double.parseDouble(errorPercentage.getText());
+			dropChance = 0;
 		}
 		else if(ackError.getState())
 		{
-			error = Double.parseDouble(errorPercentage.getText());
-		}		
-		server = new UDPServer(serverField.getText(), port, serverLogging.getState(), error);
+			error = 0;
+			dropChance = 0;
+		}
+		else if (dataDrop.getState()){
+			error = 0;
+			dropChance = 0;
+		} 
+		else if (ackDrop.getState()){
+			error = 0;
+			dropChance = Double.parseDouble(errorPercentage.getText());
+		}
+		
+		server = new UDPServer(serverField.getText(), port, serverLogging.getState(), error, dropChance);
 		
 		//make the thread
 		serverThread = new Thread(server);
@@ -181,9 +209,14 @@ public class CopyGUI extends Frame {
 		noLoss = new Checkbox("No Loss", lossGroup, true);
 		ackError = new Checkbox("ACK error", lossGroup, false);
 		dataError = new Checkbox("Data error", lossGroup, false);
+		ackDrop = new Checkbox("Ack Drop", lossGroup, false);
+		dataDrop = new Checkbox("Data Drop", lossGroup, false);
+		
 		lossContainer.add(noLoss);
 		lossContainer.add(ackError);
 		lossContainer.add(dataError);
+		lossContainer.add(ackDrop);
+		lossContainer.add(dataDrop);
 		
 		errorLabel = new Label("Error rate (%%)");
 		errorPercentage = new TextField("00", 2);
@@ -277,7 +310,7 @@ public class CopyGUI extends Frame {
 			}
 		});
 		setTitle("Image Transfer-er");
-		setSize(600,200);
+		setSize(800,200);
 		setVisible(true);
 	}
 	

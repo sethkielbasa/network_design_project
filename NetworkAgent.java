@@ -29,6 +29,7 @@ public abstract class NetworkAgent implements Runnable {
 	int port;
 	int corruptedCounter;
 	double corruptionChance;
+	double dropChance;
 	boolean packetLogging;
 	String logPrefix;
 	FileWriter out;
@@ -38,13 +39,15 @@ public abstract class NetworkAgent implements Runnable {
 	
 	//////////shared functions
 	
-	NetworkAgent(String logPrefix, String logFn, String imageName, int port, boolean packetLogging, double corruptionChance)
+	NetworkAgent(String logPrefix, String logFn, String imageName, int port, 
+			boolean packetLogging, double corruptionChance, double dropChance)
 	{
 		this.logPrefix = logPrefix;
 		this.port = port;
 		this.imageName = imageName;
 		this.packetLogging = packetLogging;
 		this.corruptionChance = corruptionChance;
+		this.dropChance = dropChance;
 		
 		corruptedCounter = 0;
 		
@@ -268,6 +271,14 @@ public abstract class NetworkAgent implements Runnable {
 			return newData;
 		} else {
 			return newData;
+		}
+	}
+	
+	boolean dropPacket(double percentChance){
+		if(Math.random()*100 < percentChance){
+			return true;
+		} else {
+			return false;
 		}
 	}
 }

@@ -10,9 +10,9 @@ public class UDPServer extends NetworkAgent{
 	 * Creates a new server
 	 * if logging is enabled, creates a new log file and writes packet messages to them.
 	 */
-	public UDPServer(String imageName, int port, boolean packetLogging, double corruptionChance)
+	public UDPServer(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance)
 	{
-		super("SERVER: ", "ServerLog.txt", imageName, port, packetLogging, corruptionChance);
+		super("SERVER: ", "ServerLog.txt", imageName, port, packetLogging, corruptionChance, dropChance);
 	}
 		
 	public void receiveImage() throws Exception
@@ -93,7 +93,11 @@ public class UDPServer extends NetworkAgent{
 				} else {
 					log("bad checksum on first packet");
 					byte[] sendPacket = addPacketHeader(new byte[DATA_SIZE], oldSeqNum);
-					transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+					if(dropPacket(dropChance)){
+						log("ACK packet dropped");
+					} else {
+						transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+					}
 					//repeat(don't break) without incrementing state if bad
 					
 				}
@@ -129,7 +133,13 @@ public class UDPServer extends NetworkAgent{
 					//make a new ACK with seqnum= ACK
 					log("Packet was good, send ACK with " + seqNum);
 					byte[] sendPacket = addPacketHeader(new byte[DATA_SIZE], seqNum);
-					transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+					
+					if(dropPacket(dropChance)){
+						log("ACK packet dropped");
+					} else {
+						transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+					}
+					
 					//Increment state
 					oldSeqNum = seqNum;
 					expectedSeqNum = getIncrementedSequenceNumber(packet);
@@ -139,7 +149,11 @@ public class UDPServer extends NetworkAgent{
 					log("Bad Checksum or Bad Sequence num :(. Send ACK with " + oldSeqNum);
 					//send the old sendPacket with the previous sequence number
 					byte[] sendPacket = addPacketHeader(new byte[DATA_SIZE], oldSeqNum);
-					transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+					if(dropPacket(dropChance)){
+						log("ACK packet dropped");
+					} else {
+						transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+					}
 				}
 				
 			}
