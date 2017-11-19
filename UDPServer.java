@@ -30,94 +30,92 @@ public class UDPServer extends NetworkAgent{
 		DatagramPacket receivePacket = null;
 		InetAddress IPAddress = null;
 		String data;
+			
+		packet = null;
+		receivePacket = null;
+		data = null;
+		IPAddress = null;
 		
-		while(!killMe) {
-			
-			packet = null;
-			receivePacket = null;
-			data = null;
-			IPAddress = null;
-			
-			
-			/*
-			 * 
-			 *  Following code taken from
-			 *  https://lowell.umassonline.net/bbcswebdav/pid-305360-dt-content-rid-977475_1/courses/L2710-11029/Sockets.pdf
-			 * 
-			 */
-			
-			//Receives the first packet
-			packet = new byte[PACKET_SIZE];
-			int seqNum = 0;
-			int expectedSeqNum = 0;
-			int oldSeqNum = 0;
-			int packets_received = 0;
-			int packets_expected = 0;
-						
-			while(true)
-			{
-				receivePacket = new DatagramPacket(packet, packet.length);
-				try{
-					myDatagramSocket.receive(receivePacket);
-				} catch (SocketException e) {
-					log("Socket port closed externally");
-					break;
-				}
-			
-				seqNum = getSequenceNumber(packet);
-				expectedSeqNum = seqNum;
-				oldSeqNum = getIncrementedSequenceNumber(packet);
+		
+		/*
+		 * 
+		 *  Following code taken from
+		 *  https://lowell.umassonline.net/bbcswebdav/pid-305360-dt-content-rid-977475_1/courses/L2710-11029/Sockets.pdf
+		 * 
+		 */
+		
+		//Receives the first packet
+		packet = new byte[PACKET_SIZE];
+		int seqNum = 0;
+		int expectedSeqNum = 0;
+		int oldSeqNum = 0;
+		int packets_received = 0;
+		int packets_expected = 0;
 				
-				//converts the received packet into a String
-				if(destructPacket(receivePacket.getData()) != null){
-					data = new String(destructPacket(receivePacket.getData()), "US-ASCII");
-					packets_expected = Integer.parseInt(data, 10);
-				}
-				log("Received " + data);
-							
-				
-				packets_received = 0;
-				log("Waiting for " + packets_expected + " packets");
-				
-				IPAddress = receivePacket.getAddress();
-				port = receivePacket.getPort();
-				
-				if(data != null && seqNum == expectedSeqNum)
-				{
-					//make a new packet with right ACK num and send it
-					byte[] sendPacket = addPacketHeader(new byte[DATA_SIZE], seqNum);
-					transmitPacket(sendPacket, myDatagramSocket, IPAddress);
-					oldSeqNum = seqNum;
-					expectedSeqNum = getIncrementedSequenceNumber(packet);
-					break;
-				} else {
-					log("bad checksum on first packet");
-					byte[] sendPacket = addPacketHeader(new byte[DATA_SIZE], oldSeqNum);
-					if(dropPacket(dropChance)){
-						log("ACK packet dropped");
-					} else {
-						transmitPacket(sendPacket, myDatagramSocket, IPAddress);
-					}
-					//repeat(don't break) without incrementing state if bad
-					
-				}
+		//keep trying to receive the first packet
+		while(killMe == false)
+		{
+			receivePacket = new DatagramPacket(packet, packet.length);
+			try{
+				myDatagramSocket.receive(receivePacket);
+			} catch (SocketException e) {
+				log("Socket port closed externally");
+				break;
 			}
+		
+			seqNum = getSequenceNumber(packet);
+			expectedSeqNum = seqNum;
+			oldSeqNum = getIncrementedSequenceNumber(packet);
 			
-			//packet is good, open image file for writing.
-			FileOutputStream fos = new FileOutputStream(imageName); //Open output file
-
-
-			log("Ready for packets");
-			while ( packets_received < packets_expected+1 && !killMe){
+			//converts the received packet into a String
+			if(destructPacket(receivePacket.getData()) != null){
+				data = new String(destructPacket(receivePacket.getData()), "US-ASCII");
+				packets_expected = Integer.parseInt(data, 10);
+			}
+			log("Received " + data);
+						
+			
+			packets_received = 0;
+			log("Waiting for " + packets_expected + " packets");
+			
+			IPAddress = receivePacket.getAddress();
+			port = receivePacket.getPort();
+			
+			if(data != null && seqNum == expectedSeqNum)
+			{
+				//make a new packet with right ACK num and send it
+				byte[] sendPacket = addPacketHeader(new byte[DATA_SIZE], seqNum);
+				transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+				oldSeqNum = seqNum;
+				expectedSeqNum = getIncrementedSequenceNumber(packet);
+				break;
+			} else {
+				log("bad checksum on first packet");
+				byte[] sendPacket = addPacketHeader(new byte[DATA_SIZE], oldSeqNum);
+				if(dropPacket(dropChance)){
+					log("ACK packet dropped");
+				} else {
+					transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+				}
+				//repeat(don't break) without incrementing state if bad
 				
-				//wait for the client to send something
-				packet = new byte[PACKET_SIZE];
-				receivePacket = new DatagramPacket(packet, packet.length);
-				try{
-					myDatagramSocket.receive(receivePacket);
-				} catch (SocketException e) {
-					log("Socket port closed externally");
-					break;
+			}
+		}
+			
+		//packet is good, open image file for writing.
+		FileOutputStream fos = new FileOutputStream(imageName); //Open output file
+
+		log("Ready for packets"); //+1 is crucial.... If the last ACK message the server sends is corrupt, the client may ping it back
+		while ( packets_received < packets_expected+1 && !killMe){
+			
+			//wait for the client to send something
+			packet = new byte[PACKET_SIZE];
+			receivePacket = new DatagramPacket(packet, packet.length);
+			try{
+				myDatagramSocket.receive(receivePacket);
+			} catch (SocketException e) {
+				log("Socket port closed externally");
+				break;
 				}
 				
 				//extracts data. Data is null if checksum is bad.
@@ -158,14 +156,11 @@ public class UDPServer extends NetworkAgent{
 				
 			}
 			
-			log("Got " + packets_received + " packets");
-			log(corruptedCounter + " checksums corrupted :'(");
-			
-			if(packetLogging)
-				out.close();
-			fos.close();
-			
-		}
+		log("Got " + packets_received + " packets");
+		log(corruptedCounter + " checksums corrupted :'(");
+		//save the image
+		fos.close();
+		finalize();
 	}
 
 	@Override

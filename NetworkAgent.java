@@ -37,6 +37,7 @@ public abstract class NetworkAgent implements Runnable {
 	DatagramSocket myDatagramSocket;
 	
 	
+	
 	//////////shared functions
 	
 	NetworkAgent(String logPrefix, String logFn, String imageName, int port, 
@@ -99,6 +100,7 @@ public abstract class NetworkAgent implements Runnable {
 				e.printStackTrace();
 			}
 		}
+		System.out.println("Finished " + logPrefix);
 	}
 	
 	/*

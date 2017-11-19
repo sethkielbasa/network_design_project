@@ -7,7 +7,7 @@ public class UDPClient extends NetworkAgent{
 	long startTime;
 	long endTime;
 	
-	int CLIENT_TIMEOUT = 30;
+	int CLIENT_TIMEOUT;
 	
 	int INIT = 0;
 	int SEND_PACKET = 1;
@@ -16,9 +16,12 @@ public class UDPClient extends NetworkAgent{
 	int CLIENT_STATE = INIT;
 	
 
-	public UDPClient(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance)
+	public UDPClient(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance, int timeOut)
 	{
 		super("CLIENT: ", "ClientLog.txt", imageName, port, packetLogging, corruptionChance, dropChance);
+		CLIENT_TIMEOUT = timeOut;
+		
+		System.out.println(timeOut);
 	}
 	
 	private int getNumberOfPacketsToSend(String file_to_send) throws IOException{
@@ -62,16 +65,7 @@ public class UDPClient extends NetworkAgent{
 		byte[] data = new byte[packet_length];
 		data = String.valueOf(num_packets).getBytes("US-ASCII");
 		
-
-		/*
-		while ( true ){
-			switch (CLIENT_STATE){
-			
-			}
-		}
-		*/
-		
-		//stay in this state until the condition to advance is met
+		//keep sending the first packet until it is ack'd
 		do
 		{
 			log( "Going to send " + num_packets + " packets");
@@ -108,7 +102,7 @@ public class UDPClient extends NetworkAgent{
 		log( "Sending all data packets");
 		
 		
-		
+		//send packets until I'm out of data
 		while(true && !killMe){
 			int data_size = fis.available(); //get bytes left to read
 			if (data_size > DATA_SIZE){
