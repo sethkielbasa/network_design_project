@@ -96,6 +96,7 @@ public class CopyGUI extends Frame {
 			dropChance = 0;
 		}
 		
+		System.out.println(clientFile);
 		client = new UDPClient(clientFile, port, clientLogging.getState(), error, dropChance);
 		//make the thread
 		clientThread = new Thread(client);
@@ -127,12 +128,12 @@ public class CopyGUI extends Frame {
 		}
 		else if(dataError.getState())
 		{
-			error = Double.parseDouble(errorPercentage.getText());
+			error = 0;
 			dropChance = 0;
 		}
 		else if(ackError.getState())
 		{
-			error = 0;
+			error = Double.parseDouble(errorPercentage.getText());
 			dropChance = 0;
 		}
 		else if (dataDrop.getState()){
