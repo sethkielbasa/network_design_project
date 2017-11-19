@@ -37,6 +37,8 @@ public class CopyGUI extends Frame {
 	Checkbox dataDrop;
 	Label errorLabel;
 	TextField errorPercentage;
+	Label timeoutLabel;
+	TextField timeoutField;
 	
 	Button startServer; //buttons to start server and client
 	Button startClient;
@@ -97,7 +99,7 @@ public class CopyGUI extends Frame {
 		}
 		
 		System.out.println(clientFile);
-		client = new UDPClient(clientFile, port, clientLogging.getState(), error, dropChance);
+		client = new UDPClient(clientFile, port, clientLogging.getState(), error, dropChance, Integer.parseInt(timeoutField.getText()));
 		//make the thread
 		clientThread = new Thread(client);
 		clientThread.start();
@@ -222,6 +224,9 @@ public class CopyGUI extends Frame {
 		errorLabel = new Label("Error rate (%%)");
 		errorPercentage = new TextField("00", 2);
 		
+		timeoutLabel = new Label("Timeout (ms)");
+		timeoutField = new TextField("30", 4);
+		
 		startServer = new Button("Start Server");		
 		startClient = new Button("Start Client");
 		
@@ -238,7 +243,9 @@ public class CopyGUI extends Frame {
 		add(lossContainer);
 		add(new Panel()); //spacer
 		add(errorLabel);
-		add(errorPercentage); 
+		add(errorPercentage);
+		add(timeoutLabel);
+		add(timeoutField);
 		add(startServer);
 		add(startClient);
 		
@@ -311,7 +318,7 @@ public class CopyGUI extends Frame {
 			}
 		});
 		setTitle("Image Transfer-er");
-		setSize(800,200);
+		setSize(800,230);
 		setVisible(true);
 	}
 	
