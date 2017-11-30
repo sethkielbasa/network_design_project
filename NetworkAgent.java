@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.util.LinkedList;
 
 /*
  * Superclass for UDPClient and UDPServer
@@ -36,7 +37,11 @@ public abstract class NetworkAgent implements Runnable {
 	volatile boolean killMe; //set true to exit as fast as possible
 	DatagramSocket myDatagramSocket;
 	
-	
+	//GBN/SR/TCP variables
+	LinkedList<byte[]> window;
+	int windowSize;
+	int windowBase; //sequence number at the base of the window
+	int nextSeqNum; //sequence number of the next packet in the window to get handled.
 	
 	//////////shared functions
 	
@@ -92,6 +97,7 @@ public abstract class NetworkAgent implements Runnable {
 	{
 		if(myDatagramSocket != null && !myDatagramSocket.isClosed())
 			myDatagramSocket.close();
+		
 		if(packetLogging)
 		{
 			try {
@@ -139,19 +145,7 @@ public abstract class NetworkAgent implements Runnable {
 	int getIncrementedSequenceNumber(byte[] packet)
 	{
 		int seq = getSequenceNumber(packet);
-		if(seq == 0)
-		{
-			return 1;
-		}
-		else if(seq == 1)
-		{
-			return 0;
-		}
-		else
-		{
-			log("Weird sequence number found: " + Integer.toString(seq));
-		}
-		return 0;
+		return seq++;
 	}
 	
 	/*
