@@ -110,6 +110,7 @@ public class UDPClient extends NetworkAgent{
 		
 		//make packets and send until I'm out of data
 		while(true && !killMe){
+			//make a new packet
 			int data_size = fis.available(); //get bytes left to read
 			if (data_size > DATA_SIZE){
 				data_size = DATA_SIZE; //max 1024 at a time
@@ -127,9 +128,16 @@ public class UDPClient extends NetworkAgent{
 				log("End of file reached. Stop sending");
 				break;
 			}
-			rdtSend(readData);
+			
+			//try sending it. If the window is full, wait and try again
+			while(!rdtSend(readData))
+			{
+				Thread.sleep(1); 
+			}
+			
 		}
 		
+		killThisAgent();
 		receiverThread.join();
 		fis.close();
 		endTime = System.currentTimeMillis() - startTime;
@@ -152,14 +160,14 @@ public class UDPClient extends NetworkAgent{
 	 */
 	boolean rdtSend(byte[] data) throws Exception  
 	{
-		if(nextSeqNum < windowBase + windowSize)
-		{
-			//make packet and add it to the window
-			byte[] sendPacket = new byte[data.length + HEADER_SIZE];
-			sendPacket = addPacketHeader(data, nextSeqNum);
-			
-			windowLock.lock(); //protect the window from mutual access w/ receiver
-			try{				
+		windowLock.lock(); //protect the window from mutual access w/ receiver
+		try{	
+			if(window.size() < windowSize)
+			{
+				//make packet and add it to the window
+				byte[] sendPacket = new byte[data.length + HEADER_SIZE];
+				sendPacket = addPacketHeader(data, nextSeqNum);
+				
 				window.add(sendPacket);
 				//if sending first in the window, start the timer
 				if(windowBase == nextSeqNum)
@@ -168,18 +176,18 @@ public class UDPClient extends NetworkAgent{
 					log("Started reset timer");
 				}
 				nextSeqNum = getIncrementedSequenceNumber(sendPacket);
-			} finally {
-				windowLock.unlock(); //unlock the lock no matter what
-			}
 			
-			//send the packet
-			unreliableSendPacket(sendPacket);
-			return true;
-		}
-		else
-		{
-			log("Had to refuse data. Window full");
-			return false;
+				//send the packet
+				unreliableSendPacket(sendPacket);
+				return true;
+			}
+			else
+			{
+				log("Had to refuse data. Window full");
+				return false;
+			}
+		} finally {
+			windowLock.unlock(); //unlock the lock no matter what
 		}
 		
 	}
@@ -188,6 +196,7 @@ public class UDPClient extends NetworkAgent{
 	//resends all of the packets in the window up to nextSeqNum
 	void handleTimeout() 
 	{
+		log("HandleTimeout Called");
 		try {
 			myDatagramSocket.setSoTimeout(CLIENT_TIMEOUT);
 		} catch (SocketException e) {
@@ -196,16 +205,21 @@ public class UDPClient extends NetworkAgent{
 			e.printStackTrace();
 		}
 		
-		
 		windowLock.lock();
 		try{
-			//walk through the window and send everything from the base up to the next sequence number
-			for(int i = 0; getSequenceNumber(window.get(i)) < nextSeqNum; i++)
+			//walk through the window and send everything from the base up to the next sequence number if appropriate
+			if(window.isEmpty())
+				return;
+			log("Handling receiver timeout.-- \n\t windowBase: " + windowBase + " nextSeq:" + nextSeqNum);
+			for(int i = 0; getSequenceNumber(window.get(i)) < nextSeqNum-1; i++)
 			{
 				try {
-					unreliableSendPacket(window.get(i));
+					byte[] thisPacket = window.get(i);
+					log("goBN-ing, in window: " + (windowBase + i));
+					log("goBN-ing, sequence number: " + (getSequenceNumber(thisPacket)));
+					unreliableSendPacket(thisPacket);
 				} catch (Exception e) {        
-					log("issues sending all the packets in the window on timeout");
+					log("issues sending all the packets in the window on timeout" + nextSeqNum);
 					e.printStackTrace();
 					return;
 				}
@@ -222,44 +236,40 @@ public class UDPClient extends NetworkAgent{
 		windowLock.lock();
 		//move the window up to the new window base by removing packets from the beginning
 		try{
-			windowBase = getSequenceNumber(packet);
-			for(byte[] p = window.removeFirst(); windowBase != getSequenceNumber(p); p = window.removeFirst())
+			if(!window.isEmpty())
 			{
-				windowBase = getSequenceNumber(p);
-				log("Moving windowBase up to " + getSequenceNumber(p));
-			}
-			//stop the timer if there are no packets in flight, reset otherwise.
+				windowBase = getSequenceNumber(packet);
+				log("Received a good ACK packet with seq: " + getSequenceNumber(packet) + "\n\t window length is: " + window.size());
+				log("Moving windowBase up to " + windowBase);
+				for(byte[] p = window.peekFirst(); windowBase > getSequenceNumber(p); p = window.removeFirst())
+				{	
+					log("\t deleting packet: " + getSequenceNumber(p) + " from window");
+				}
+				
+				//stop the timer if there are no packets in flight, reset otherwise.
 		
-			if(windowBase == nextSeqNum)
-			{
-				//stop the timer
-				myDatagramSocket.setSoTimeout(0);
-			}
-			else
-			{
-				//reset hte timer
-				myDatagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+				if(windowBase == nextSeqNum)
+				{
+					//stop the timer
+					myDatagramSocket.setSoTimeout(0);
+				}
+				else
+				{
+					//reset hte timer
+					myDatagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+				}
+			} else {
+				log("Received a good packet with seq: " + getSequenceNumber(packet) + " but window empty");
 			}
 		} catch (SocketException e) {
-			log("Error resetting timer after good packet received");
+			log("SocketException resetting timer after good packet received");
 			killThisAgent();
-			e.printStackTrace();
 		} finally {
 			windowLock.unlock(); //unlock no matter what
 		}
 	}
 	
-	//maybe send a packet on the dataGram socket depending on drop Chance
-	void unreliableSendPacket(byte[] sendPacket) throws Exception
-	{
-		if(dropPacket(dropChance)){
-			log("Dropped packet: " + nextSeqNum);
-		} else {
-			transmitPacket(sendPacket, myDatagramSocket);
-			log("Sent packet: " + nextSeqNum);
-		}
-		
-	}
+
 	
 	class ReceiverRunner implements Runnable
 	{
@@ -298,6 +308,8 @@ public class UDPClient extends NetworkAgent{
 				if(packetData != null)
 				{
 					receivedGoodPacket(receivePacket);
+				} else {
+					log("Received Bad ACK packet with seq: " + getSequenceNumber(receivePacket));
 				}
 			}
 		}	

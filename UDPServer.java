@@ -84,7 +84,7 @@ public class UDPServer extends NetworkAgent{
 			{
 				//make a new packet with right ACK num and send it
 				sendPacket = addPacketHeader(new byte[DATA_SIZE], seqNum);
-				transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+				unreliableSendPacket(sendPacket);
 				expectedSeqNum = getIncrementedSequenceNumber(packet);
 				break;
 			} else {
@@ -93,7 +93,7 @@ public class UDPServer extends NetworkAgent{
 				if(dropPacket(dropChance)){
 					log("ACK packet dropped");
 				} else {
-					transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+					unreliableSendPacket(sendPacket);
 				}
 				//repeat(don't break) without incrementing state if bad
 				
@@ -134,7 +134,7 @@ public class UDPServer extends NetworkAgent{
 				if(dropPacket(dropChance)){
 						log("ACK packet dropped");
 				} else {
-					transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+					unreliableSendPacket(sendPacket);
 				}
 					
 				//Increment state
@@ -142,12 +142,14 @@ public class UDPServer extends NetworkAgent{
 				packets_received++; //increment the good packet count
 				log("packet number " + packets_received);
 			} else {
+				if(packetData == null)
+					log("Corrupt packetData");
 				log("Bad Checksum or Bad Sequence num :(. Send ACK with " + getSequenceNumber(sendPacket));
 				//send the old sendPacket with the previous sequence number
 				if(dropPacket(dropChance)){
 					log("ACK packet dropped");
 				} else {
-					transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+					unreliableSendPacket(sendPacket);
 				}
 			}
 				
