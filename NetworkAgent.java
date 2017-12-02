@@ -17,7 +17,7 @@ public abstract class NetworkAgent implements Runnable {
 	
 	//////////Constants		 
 	
-	
+	final int TCP_HEADER_SIZE = 20;
 	final int HEADER_SIZE = 6;
 	final int PACKET_SIZE = 1024;
 	final int DATA_SIZE = PACKET_SIZE - HEADER_SIZE;
@@ -186,6 +186,72 @@ public abstract class NetworkAgent implements Runnable {
 	 * Given packet data and an ACK number,
 	 * make a new packet
 	 */
+	
+	//TODO: add this in later
+	public byte[] addTCPHeader(byte[] readData, 
+			int sourcePort, int destinationPort,
+			int sequenceNumber, int ackNumber,
+			int TCPflags, int windowSize, int urgent){
+		
+		int packetSize = readData.length;
+		byte[] packet = new byte[packetSize + TCP_HEADER_SIZE];
+		
+		
+		//set source port, 0:1
+		packet[0] = (byte) ((sourcePort >> 8) & 0xFF); //msbFirst
+		packet[1] = (byte) (sourcePort & 0xFF);
+		
+		//set destination port, 2:3
+		packet[2] = (byte) ((destinationPort >> 8) & 0xFF); //msbFirst
+		packet[3] = (byte) (destinationPort & 0xFF);
+		
+		//sequnce number 4:7
+		packet[4] = (byte) ((sequenceNumber >> 8) & 0xFF); //msbFirst
+		packet[5] = (byte) ((sequenceNumber >> 8) & 0xFF); //msbFirst
+		packet[6] = (byte) ((sequenceNumber >> 8) & 0xFF); //msbFirst
+		packet[7] = (byte) (sequenceNumber & 0xFF);
+
+		//ack number 8:11
+		packet[8] = (byte) ((ackNumber >> 8) & 0xFF); //msbFirst
+		packet[9] = (byte) ((ackNumber >> 8) & 0xFF); //msbFirst
+		packet[10] = (byte) ((ackNumber >> 8) & 0xFF); //msbFirst
+		packet[11] = (byte) (ackNumber & 0xFF);
+		
+		
+		byte[] flags = new byte[2];					 // 12:13
+		flags = doFlagStuff(TCPflags);
+		packet[12] = flags[0];
+		packet[13] = flags[1];
+		
+		 // set window size, 14:15
+		packet[14] = (byte) ((windowSize >> 8) & 0xFF); //msbFirst
+		packet[15] = (byte) (windowSize & 0xFF);	
+		byte[] checksum = new byte[2];		
+		
+		// checksum, 16:17
+		checksum = calculateChecksum( readData , true );
+		packet[16] = checksum[0];
+		packet[17] = checksum[1];
+		
+		//set urgent 18:19
+		packet[18] = (byte) ((urgent >> 8) & 0xFF); //msbFirst
+		packet[19] = (byte) (urgent & 0xFF);
+		
+		
+		return packet;
+	}
+	
+	byte[] doFlagStuff(int flags){
+		byte[] flagStuff = new byte[2];		
+		flagStuff[0] = 0x50; // 0x0101000X, set upper 7bits, offset = 5	
+		flagStuff[0] = (byte) (flagStuff[0] | ((flags >> 8) & 0x1)); //set lower bit
+		
+		flagStuff[1] = 0;
+		flagStuff[1] = (byte)( flags & 0xFF); //8 lower bits of flags
+		
+		return flagStuff;
+	}
+	
 	byte[] addPacketHeader(byte[] readData, int ackNumber){
 		int packetSize = readData.length;
 		byte[] packet = new byte[packetSize + HEADER_SIZE];
