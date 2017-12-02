@@ -48,7 +48,7 @@ public abstract class NetworkAgent implements Runnable {
 	//////////shared functions
 	
 	NetworkAgent(String logPrefix, String logFn, String imageName, int port, 
-			boolean packetLogging, double corruptionChance, double dropChance)
+			boolean packetLogging, double corruptionChance, double dropChance, int windowSize)
 	{
 		this.logPrefix = logPrefix;
 		this.port = port;
@@ -56,9 +56,10 @@ public abstract class NetworkAgent implements Runnable {
 		this.packetLogging = packetLogging;
 		this.corruptionChance = corruptionChance;
 		this.dropChance = dropChance;
+		this.windowSize = windowSize;
 		
 		corruptedCounter = 0;
-		windowSize = 5;
+		
 		
 		killMe = false;
 

@@ -12,7 +12,7 @@ public class UDPServer extends NetworkAgent{
 	 */
 	public UDPServer(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance)
 	{
-		super("SERVER: ", "ServerLog.txt", imageName, port, packetLogging, corruptionChance, dropChance);
+		super("SERVER: ", "ServerLog.txt", imageName, port, packetLogging, corruptionChance, dropChance,0);
 	}
 		
 	public void receiveImage() throws Exception
@@ -70,9 +70,8 @@ public class UDPServer extends NetworkAgent{
 			if(destructPacket(receiveDatagram.getData()) != null){
 				data = new String(destructPacket(receiveDatagram.getData()), "US-ASCII");
 				packets_expected = Integer.parseInt(data, 10);
+				log("Received " + data);
 			}
-			log("Received " + data);
-						
 			
 			packets_received = 0;
 			log("Waiting for " + packets_expected + " packets");

@@ -39,6 +39,8 @@ public class CopyGUI extends Frame {
 	TextField errorPercentage;
 	Label timeoutLabel;
 	TextField timeoutField;
+	Label windowSizeLabel;
+	TextField windowSizeField;
 	
 	Button startServer; //buttons to start server and client
 	Button startClient;
@@ -99,7 +101,7 @@ public class CopyGUI extends Frame {
 		}
 		
 		System.out.println(clientFile);
-		client = new UDPClient(clientFile, port, clientLogging.getState(), error, dropChance, Integer.parseInt(timeoutField.getText()));
+		client = new UDPClient(clientFile, port, clientLogging.getState(), error, dropChance, Integer.parseInt(timeoutField.getText()),  Integer.parseInt(windowSizeField.getText()));
 		//make the thread
 		clientThread = new Thread(client);
 		clientThread.start();
@@ -227,6 +229,9 @@ public class CopyGUI extends Frame {
 		timeoutLabel = new Label("Timeout (ms)");
 		timeoutField = new TextField("30", 4);
 		
+		windowSizeLabel = new Label("Window size");
+		windowSizeField = new TextField("5", 4);
+		
 		startServer = new Button("Start Server");		
 		startClient = new Button("Start Client");
 		
@@ -246,8 +251,11 @@ public class CopyGUI extends Frame {
 		add(errorPercentage);
 		add(timeoutLabel);
 		add(timeoutField);
+		add(windowSizeLabel);
+		add(windowSizeField);
 		add(startServer);
 		add(startClient);
+	
 		
 		//set listeners for buttons
 		//Anonymous class code used from S.O. https://stackoverflow.com/questions/9569700/java-call-method-via-jbutton

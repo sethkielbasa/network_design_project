@@ -18,9 +18,9 @@ public class UDPClient extends NetworkAgent{
 	int CLIENT_STATE = INIT;
 	
 
-	public UDPClient(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance, int timeOut)
+	public UDPClient(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance, int timeOut, int windowSize)
 	{
-		super("CLIENT: ", "ClientLog.txt", imageName, port, packetLogging, corruptionChance, dropChance);
+		super("CLIENT: ", "ClientLog.txt", imageName, port, packetLogging, corruptionChance, dropChance, windowSize);
 		CLIENT_TIMEOUT = timeOut;
 		
 		windowLock = new ReentrantLock();
@@ -65,7 +65,7 @@ public class UDPClient extends NetworkAgent{
 		int num_packets = getNumberOfPacketsToSend( imageName ); //get number of packets in the image
 
 		int packet_length = String.valueOf(num_packets).getBytes("US-ASCII").length; //length of string version of number of packets
-		byte[] data = new byte[packet_length];
+		byte[] data = new byte[DATA_SIZE];
 		data = String.valueOf(num_packets).getBytes("US-ASCII");
 		
 		//keep sending the first packet until it is ack'd
@@ -184,6 +184,8 @@ public class UDPClient extends NetworkAgent{
 			else
 			{
 				log("Had to refuse data. Window full");
+				if(killMe)
+					return true; //pretend it send just so you can die
 				return false;
 			}
 		} finally {
