@@ -183,7 +183,7 @@ public class UDPClient extends NetworkAgent{
 			}
 			else
 			{
-				log("Had to refuse data. Window full");
+				//log("Had to refuse data. Window full");
 				if(killMe)
 					return true; //pretend it send just so you can die
 				return false;
@@ -210,18 +210,30 @@ public class UDPClient extends NetworkAgent{
 		windowLock.lock();
 		try{
 			//walk through the window and send everything from the base up to the next sequence number if appropriate
-			if(window.isEmpty())
+			if(window.isEmpty()){
+				log("Window is empty");
 				return;
+			}
 			log("Handling receiver timeout.-- \n\t windowBase: " + windowBase + " nextSeq:" + nextSeqNum);
-			for(int i = 0; getSequenceNumber(window.get(i)) < nextSeqNum-1; i++)
-			{
-				try {
-					byte[] thisPacket = window.get(i);
-					log("goBN-ing, in window: " + (windowBase + i));
-					log("goBN-ing, sequence number: " + (getSequenceNumber(thisPacket)));
+			if( windowSize > 1){
+				for(int i = 0; getSequenceNumber(window.get(i)) < nextSeqNum-1; i++)
+				{
+					try {
+						byte[] thisPacket = window.get(i);
+						log("goBN-ing, in window: " + (windowBase + i));
+						log("goBN-ing, sequence number: " + (getSequenceNumber(thisPacket)));
+						unreliableSendPacket(thisPacket);
+					} catch (Exception e) {        
+						log("issues sending all the packets in the window on timeout" + nextSeqNum);
+						e.printStackTrace();
+						return;
+					}
+				}
+			} else {
+				try{
+					byte[] thisPacket = window.get(0);
 					unreliableSendPacket(thisPacket);
-				} catch (Exception e) {        
-					log("issues sending all the packets in the window on timeout" + nextSeqNum);
+				} catch (Exception e){
 					e.printStackTrace();
 					return;
 				}
@@ -240,18 +252,25 @@ public class UDPClient extends NetworkAgent{
 		try{
 			if(!window.isEmpty())
 			{
-				windowBase = getSequenceNumber(packet);
+				windowBase = getSequenceNumber(packet) + 1;
 				log("Received a good ACK packet with seq: " + getSequenceNumber(packet) + "\n\t window length is: " + window.size());
 				log("Moving windowBase up to " + windowBase);
 				byte[] p = window.peekFirst();
-				while(getSequenceNumber(p) <= windowBase)
+				boolean flag = true;
+				while( flag )
 				{
 					if(!window.isEmpty())
 					{
-						p = window.removeFirst();
-						log("\t deleting packet: " + getSequenceNumber(p) + " from window");
+						p = window.getFirst();
+						if( getSequenceNumber(p) < windowBase){
+							p = window.removeFirst();
+							log("\t deleting packet: " + getSequenceNumber(p) + " from window");
+						} else {
+							flag = false;
+						}
 					} else {
 						log("Window emptied");
+						flag = false;
 						break;
 					}
 					
@@ -262,7 +281,7 @@ public class UDPClient extends NetworkAgent{
 				if(windowBase == nextSeqNum)
 				{
 					//stop the timer
-					myDatagramSocket.setSoTimeout(0);
+					//myDatagramSocket.setSoTimeout(0);
 				}
 				else
 				{
