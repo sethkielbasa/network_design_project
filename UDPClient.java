@@ -27,7 +27,7 @@ public class UDPClient extends NetworkAgent{
 		window = new LinkedList<byte[]>();
 		windowBase = 0;
 		nextSeqNum = 0;
-		System.out.println(timeOut);
+		//System.out.println(timeOut);
 	}
 	
 	private int getNumberOfPacketsToSend(String file_to_send) throws IOException{

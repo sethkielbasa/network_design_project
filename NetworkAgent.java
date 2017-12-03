@@ -138,8 +138,9 @@ public abstract class NetworkAgent implements Runnable {
 	 * Returns the sequence number field of the packet.
 	 */
 	int getSequenceNumber(byte[] packet)
-	{
-		return packet[1] + (packet[0] << 8);
+	{		
+		int temp = ((packet[0] & 0xFF) << 8) + (packet[1] & 0xFF);
+		return temp;
 	}	
 	
 	/*
