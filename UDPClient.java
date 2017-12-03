@@ -243,9 +243,18 @@ public class UDPClient extends NetworkAgent{
 				windowBase = getSequenceNumber(packet);
 				log("Received a good ACK packet with seq: " + getSequenceNumber(packet) + "\n\t window length is: " + window.size());
 				log("Moving windowBase up to " + windowBase);
-				for(byte[] p = window.peekFirst(); windowBase > getSequenceNumber(p); p = window.removeFirst())
-				{	
-					log("\t deleting packet: " + getSequenceNumber(p) + " from window");
+				byte[] p = window.peekFirst();
+				while(getSequenceNumber(p) <= windowBase)
+				{
+					if(!window.isEmpty())
+					{
+						p = window.removeFirst();
+						log("\t deleting packet: " + getSequenceNumber(p) + " from window");
+					} else {
+						log("Window emptied");
+						break;
+					}
+					
 				}
 				
 				//stop the timer if there are no packets in flight, reset otherwise.
