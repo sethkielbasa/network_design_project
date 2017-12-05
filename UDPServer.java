@@ -12,7 +12,7 @@ public class UDPServer extends NetworkAgent{
 	 */
 	public UDPServer(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance)
 	{
-		super("SERVER: ", "ServerLog.txt", imageName, port, packetLogging, corruptionChance, dropChance);
+		super("SERVER: ", "ServerLog.txt", imageName, port, packetLogging, corruptionChance, dropChance,0);
 	}
 		
 	public void receiveImage() throws Exception
@@ -70,9 +70,8 @@ public class UDPServer extends NetworkAgent{
 			if(destructPacket(receiveDatagram.getData()) != null){
 				data = new String(destructPacket(receiveDatagram.getData()), "US-ASCII");
 				packets_expected = Integer.parseInt(data, 10);
+				log("Received " + data);
 			}
-			log("Received " + data);
-						
 			
 			packets_received = 0;
 			log("Waiting for " + packets_expected + " packets");
@@ -84,7 +83,7 @@ public class UDPServer extends NetworkAgent{
 			{
 				//make a new packet with right ACK num and send it
 				sendPacket = addPacketHeader(new byte[DATA_SIZE], seqNum);
-				transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+				unreliableSendPacket(sendPacket);
 				expectedSeqNum = getIncrementedSequenceNumber(packet);
 				break;
 			} else {
@@ -93,7 +92,7 @@ public class UDPServer extends NetworkAgent{
 				if(dropPacket(dropChance)){
 					log("ACK packet dropped");
 				} else {
-					transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+					unreliableSendPacket(sendPacket);
 				}
 				//repeat(don't break) without incrementing state if bad
 				
@@ -134,7 +133,7 @@ public class UDPServer extends NetworkAgent{
 				if(dropPacket(dropChance)){
 						log("ACK packet dropped");
 				} else {
-					transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+					unreliableSendPacket(sendPacket);
 				}
 					
 				//Increment state
@@ -142,12 +141,14 @@ public class UDPServer extends NetworkAgent{
 				packets_received++; //increment the good packet count
 				log("packet number " + packets_received);
 			} else {
+				if(packetData == null)
+					log("Corrupt packetData");
 				log("Bad Checksum or Bad Sequence num :(. Send ACK with " + getSequenceNumber(sendPacket));
 				//send the old sendPacket with the previous sequence number
 				if(dropPacket(dropChance)){
 					log("ACK packet dropped");
 				} else {
-					transmitPacket(sendPacket, myDatagramSocket, IPAddress);
+					unreliableSendPacket(sendPacket);
 				}
 			}
 				

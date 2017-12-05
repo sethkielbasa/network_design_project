@@ -6,6 +6,7 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.util.LinkedList;
+import java.util.concurrent.locks.Lock;
 
 /*
  * Superclass for UDPClient and UDPServer
@@ -37,7 +38,8 @@ public abstract class NetworkAgent implements Runnable {
 	volatile boolean killMe; //set true to exit as fast as possible
 	DatagramSocket myDatagramSocket;
 	
-	//GBN/SR/TCP variables
+	//GBN/SR/TCP variables. All protected by a lock
+	Lock windowLock;
 	LinkedList<byte[]> window;
 	int windowSize;
 	int windowBase; //sequence number at the base of the window
@@ -46,7 +48,7 @@ public abstract class NetworkAgent implements Runnable {
 	//////////shared functions
 	
 	NetworkAgent(String logPrefix, String logFn, String imageName, int port, 
-			boolean packetLogging, double corruptionChance, double dropChance)
+			boolean packetLogging, double corruptionChance, double dropChance, int windowSize)
 	{
 		this.logPrefix = logPrefix;
 		this.port = port;
@@ -54,8 +56,10 @@ public abstract class NetworkAgent implements Runnable {
 		this.packetLogging = packetLogging;
 		this.corruptionChance = corruptionChance;
 		this.dropChance = dropChance;
+		this.windowSize = windowSize;
 		
 		corruptedCounter = 0;
+		
 		
 		killMe = false;
 
@@ -134,8 +138,9 @@ public abstract class NetworkAgent implements Runnable {
 	 * Returns the sequence number field of the packet.
 	 */
 	int getSequenceNumber(byte[] packet)
-	{
-		return packet[1] + (packet[0] << 8);
+	{		
+		int temp = ((packet[0] & 0xFF) << 8) + (packet[1] & 0xFF);
+		return temp;
 	}	
 	
 	/*
@@ -145,7 +150,8 @@ public abstract class NetworkAgent implements Runnable {
 	int getIncrementedSequenceNumber(byte[] packet)
 	{
 		int seq = getSequenceNumber(packet);
-		return seq++;
+		log("seq =" + seq);
+		return seq + 1;
 	}
 	
 	/*
@@ -191,10 +197,9 @@ public abstract class NetworkAgent implements Runnable {
 		byte[] packet = new byte[packetSize + HEADER_SIZE];
 		
 		
-		byte[] maybeCorruptedData = corruptDataMaybe(readData, corruptionChance);
 		//copies maybe-corrupted into the new packet
 		for ( int i = 0; i < packetSize; i++){
-			packet[i + HEADER_SIZE] = maybeCorruptedData[i];
+			packet[i + HEADER_SIZE] = readData[i];
 		}
 		
 		//puts appropriate fields into the header.
@@ -267,6 +272,17 @@ public abstract class NetworkAgent implements Runnable {
 			return newData;
 		} else {
 			return newData;
+		}
+	}
+	
+	//maybe send a packet on the dataGram socket depending on drop Chance
+	void unreliableSendPacket(byte[] sendPacket) throws Exception
+	{
+		if(dropPacket(dropChance)){
+			log("URDropped packet: " + getSequenceNumber(sendPacket));
+		} else {
+			transmitPacket(corruptDataMaybe(sendPacket, corruptionChance), myDatagramSocket);
+			log("URSent packet: " + getSequenceNumber(sendPacket));
 		}
 	}
 	
