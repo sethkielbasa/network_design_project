@@ -46,10 +46,10 @@ public class CopyGUI extends Frame {
 	Button startClient;
 	
 	//client-server logic 
-	UDPClient client;
+	TCPClient client;
 	Thread clientThread;
 	boolean startClientThread = true; //state whether to start or stop the client thread
-	UDPServer server;
+	TCPServer server;
 	Thread serverThread;
 	boolean startServerThread = true; //state whether to start or stop the servert thread
 	
@@ -101,7 +101,7 @@ public class CopyGUI extends Frame {
 		}
 		
 		System.out.println(clientFile);
-		client = new UDPClient(clientFile, port, clientLogging.getState(), error, dropChance, Integer.parseInt(timeoutField.getText()),  Integer.parseInt(windowSizeField.getText()));
+		client = new TCPClient(clientFile, port, clientLogging.getState(), error, dropChance, Integer.parseInt(timeoutField.getText()),  Integer.parseInt(windowSizeField.getText()));
 		//make the thread
 		clientThread = new Thread(client);
 		clientThread.start();
@@ -149,7 +149,7 @@ public class CopyGUI extends Frame {
 			dropChance = Double.parseDouble(errorPercentage.getText());
 		}
 		
-		server = new UDPServer(serverField.getText(), port, serverLogging.getState(), error, dropChance);
+		server = new TCPServer(serverField.getText(), port, serverLogging.getState(), error, dropChance);
 		
 		//make the thread
 		serverThread = new Thread(server);
