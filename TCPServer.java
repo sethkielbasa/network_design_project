@@ -2,8 +2,6 @@ package network_design_project;
 import java.io.*;
 import java.net.*;
 
-import network_design_project.NetworkAgent.State;
-
 
 public class TCPServer extends NetworkAgent {
 
@@ -25,17 +23,10 @@ public class TCPServer extends NetworkAgent {
 		byte[] sendPacket = new byte[0];	//packet (with header) sent to the server
 		byte[] receivePacket = new byte[0]; 	//packet (with header) received from the server
 		byte[] sendData;
-		byte[] receivedData; 	//unpacked received data 
 		DatagramPacket receiveDatagram;
-		int receivedAckNumber;
-		int packet_length;
 		int tcp_flags;
-		
-		InetAddress IPAddress = null;
-		String data;
+
 		receiveDatagram = null;
-		data = null;
-		IPAddress = null;
 		
 		int sequence_number = 0;;
 		int ack_number = 0;
@@ -45,14 +36,11 @@ public class TCPServer extends NetworkAgent {
 		while(true){
 			switch( Server_State ){
 			case INIT:
-				log("####### Server STATE: INIT");
+				log("###### Server STATE: INIT");
 				sendPacket = null;
 				receivePacket = null;
 				sendData = null;
-				receivedData = null;
 				receiveDatagram = null;
-		
-				receivedAckNumber = 1;
 				sequence_number = (int) (Math.random() * 1024);
 				ack_number = 0;
 				tcp_flags = 0;
@@ -66,6 +54,7 @@ public class TCPServer extends NetworkAgent {
 				boolean flag = true;
 				while(flag){				
 					receivePacket = new byte[TCP_HEADER_BYTES];
+					datagramSocket.setSoTimeout(0);
 					receiveDatagram = new DatagramPacket(receivePacket, receivePacket.length);
 					try{
 						datagramSocket.receive(receiveDatagram);
@@ -121,41 +110,114 @@ public class TCPServer extends NetworkAgent {
 				}			
 				break;
 				
-			
-				
 			case ESTABLISHED:
-				log("###### Server STATE: ESTABLISHED");
+				log("###### SERVER STATE: ESTABLISHED");
+				FileOutputStream fos = new FileOutputStream(imageName);
 				while(true){
 					
-					if(false)
+					datagramSocket.setSoTimeout(SERVER_TIMEOUT);
+					receivePacket = new byte[PACKET_SIZE];
+					receiveDatagram = new DatagramPacket(receivePacket, PACKET_SIZE);
+					try{
+						datagramSocket.receive(receiveDatagram);
+					} catch (SocketException e) {
+						log("Socket port closed externally");
+					} catch (InterruptedIOException e){
+						//Go back to OPEN and re-send packet
+						log("SERVER: SYN_RCVD Timeout");
+					}
+					if( checkTCPFlags( receivePacket, State.FIN_WAIT_1)){
+						Server_State = State.CLOSE_WAIT;
+						fos.close();
 						break;
+					}
+					
+					if (checkTCPFlags( receivePacket, State.ESTABLISHED)){
+						int packetLength = getReceivedPacketLength(receivePacket) - 24;
+						byte[] data = new byte[ packetLength ];
+						data = getReceivedPacketData(receivePacket, packetLength);
+						log("SERVER: Writing " + packetLength + " bytes");
+						fos.write(data);						
+					}
+					
 				}
 				
 				break;
-				
-			case FIN_WAIT_1:
-				break;
-				
-			case FIN_WAIT_2:
-				break;
-				
+
 			case CLOSE_WAIT:
-				break;
+				log("###### SERVER STATE: CLOSE_WAIT");
+				tcp_flags = getTCPFlags(Server_State);
+				ack_number = extractSequenceNumber(receivePacket) + 1;
 				
-			case CLOSING:
+				sendData = new byte[0];
+				sendPacket = addTCPPacketHeader(
+						sendData, src_port, dst_port, sequence_number, 
+						ack_number,	tcp_flags, windowSize, 0, 
+						sendData.length + TCP_HEADER_BYTES);
+				unreliableSendPacket(sendPacket, dst_port);
+				
+				Server_State = State.LAST_ACK;
 				break;
 				
 			case LAST_ACK:
+				log("###### SERVER STATE: LAST_ACK");
+				tcp_flags = getTCPFlags(Server_State);
+				ack_number = extractSequenceNumber(receivePacket) + 1;
+				
+				sendData = new byte[0];
+				sendPacket = addTCPPacketHeader(
+						sendData, src_port, dst_port, sequence_number, 
+						ack_number,	tcp_flags, windowSize, 0, 
+						sendData.length + TCP_HEADER_BYTES);
+				unreliableSendPacket(sendPacket, dst_port);
+				
+				while(true){
+					
+					datagramSocket.setSoTimeout(SERVER_TIMEOUT);
+					try{
+						datagramSocket.receive(receiveDatagram);
+					} catch (SocketException e) {
+						log("Socket port closed externally");
+					} catch (InterruptedIOException e){
+						//Go back to OPEN and re-send packet
+						log("SERVER: SYN_RCVD Timeout");
+					}
+					if( checkTCPFlags( receivePacket, State.FIN_WAIT_1)){
+						Server_State = State.CLOSE_WAIT;
+						break;
+					} else if( checkTCPFlags( receivePacket, Server_State)){
+						Server_State = State.CLOSED;
+						break;
+					}
+				}
+				break;
+				
+			
+				
+			case CLOSED:
+				log("###### SERVER STATE: CLOSED");
+				log("###### SERVER Connection teardown complete");
+				log("###### SERVER resetting");
+				Server_State = State.INIT;
 				break;
 				
 			case TIME_WAIT:
+				log("###### SERVER STATE: CLOSED");
+				System.exit(0);;
 				break;
 				
-			case CLOSED:	
+			case FIN_WAIT_1:
+				log("###### SERVER STATE: FIN_WAIT_1");
+				System.exit(0);
+				break;
+				
+			case FIN_WAIT_2:
+				log("###### SERVER STATE: FIN_WAIT_1");
+				System.exit(0);
 				break;
 				
 			case OPEN:
-				log("###### Server STATE: OPEN");
+				log("###### SERVER STATE: OPEN");
 				System.exit(0);
 			
 			case SYN_SENT:

@@ -18,7 +18,7 @@ public abstract class NetworkAgent implements Runnable {
 	
 	public enum State{
 		INIT, OPEN, LISTEN, CLOSED, SYN_SENT, SYN_RCVD, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, 
-		CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT
+		CLOSE_WAIT, LAST_ACK, TIME_WAIT, CLOSING
 	}
 	
 	//////////Constants		 
@@ -127,6 +127,7 @@ public abstract class NetworkAgent implements Runnable {
 		int packetLength = packet[4] & 0xFF;
 		packetLength = packetLength << 8;
 		packetLength = packetLength | (packet [5] & 0xFF);
+		assert( packetLength < 0 );
 		return packetLength;
 	}
 		
@@ -209,7 +210,7 @@ public abstract class NetworkAgent implements Runnable {
 		
 		//copies maybe-corrupted into the new packet
 		for ( int i = 0; i < packetSize; i++){
-			packet[i + HEADER_SIZE] = readData[i];
+			packet[i + TCP_HEADER_BYTES] = readData[i];
 		}
 		
 		packet[0] = (byte) ((source_port >> 8) & 0xFF);
@@ -274,7 +275,22 @@ public abstract class NetworkAgent implements Runnable {
 			flags = flags | 0x10; //Turn ACK flag on
 			break;
 		case ESTABLISHED:
-			flags = flags | 0x00;
+			flags = flags | 0x00; //No flags
+			break;
+		case FIN_WAIT_1:
+			flags = flags | 0x1; //Turn FIN flag on
+			break;
+		case CLOSE_WAIT:
+			flags = flags | 0x11; //Turn FIN-ACK on
+			break;
+		case LAST_ACK:
+			flags = flags | 0x1; //Turn FIN on
+			break;
+		case TIME_WAIT:
+			flags = flags | 0x11; //Turn FIN-ACK on
+			break;
+		case CLOSING:
+			flags = flags | 0x11; //Turn FIN-ACK on
 			break;
 		default:
 			log("Hit default state in getTCPFlags()");
@@ -288,17 +304,22 @@ public abstract class NetworkAgent implements Runnable {
 		temp = (temp << 8) | (packet[5] & 0xFF);
 		temp = (temp << 8) | (packet[6] & 0xFF);
 		temp = (temp << 8) | (packet[7] & 0xFF);
-		
 		return temp;
 	}
 		
 	int extractAckNumber(byte[] packet){
-		
 		int temp = packet[8] & 0xFF;
 		temp = (temp << 8) | (packet[9] & 0xFF);
 		temp = (temp << 8) | (packet[10] & 0xFF);
 		temp = (temp << 8) | (packet[11] & 0xFF);
-		
+		return temp;
+	}
+	
+	int getReceivedPacketLength(byte[] packet){
+		int temp = packet[20] & 0xFF;
+		temp = (temp << 8) | (packet[21] & 0xFF);
+		temp = (temp << 8) | (packet[22] & 0xFF);
+		temp = (temp << 8) | (packet[23] & 0xFF);
 		return temp;
 	}
 		
@@ -332,23 +353,46 @@ public abstract class NetworkAgent implements Runnable {
 				return true;
 			else
 				return false;
+			
+		case ESTABLISHED:
+			flags = flags | 0x00;
+			if( rcvd_tcp_flags == flags )
+				return true;
+			else
+				return false;
+			
+		case FIN_WAIT_1:
+			flags = flags | 0x1; // FIN 
+			if( rcvd_tcp_flags == flags )
+				return true;
+			else
+				return false;
+			
+		case FIN_WAIT_2:
+			flags = flags | 0x11; // FIN-ACK
+			if( rcvd_tcp_flags == flags )
+				return true;
+			else
+				return false;
+		
+		case LAST_ACK:
+			flags = flags | 0x11; // FIN-ACK
+			if( rcvd_tcp_flags == flags )
+				return true;
+			else
+				return false;
+		
+		case TIME_WAIT:
+			flags = flags | 0x1; // FIN
+			if( rcvd_tcp_flags == flags )
+				return true;
+			else
+				return false;
+		
 		default:
 			log("--------------------------  Hit Default in checkTCPFlags() : " + state );
 			System.exit(0);
 			return false;
-		}
-	}
-	
-	int getPacketLength(State state){
-		switch(state){
-		case OPEN:
-		case SYN_SENT:
-		case SYN_RCVD:
-			return 0;
-		default:
-			log("Hit default state in getPacketLength()");
-			System.exit(0);
-			return -1;		
 		}
 	}
 	
@@ -360,6 +404,14 @@ public abstract class NetworkAgent implements Runnable {
 			log("End of data available. Break");
 		}
 		return data_size;
+	}
+	
+	byte[] getReceivedPacketData(byte[] packet, int length){
+		byte[] temp = new byte[length];
+		for(int i = 0; i < length; i++){
+			temp[i] = packet[i + 24];
+		}
+		return temp;
 	}
 
 	void transmitPacket(byte[] packet, DatagramSocket socket, InetAddress IPAddress ) throws Exception{
