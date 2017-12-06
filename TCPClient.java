@@ -54,7 +54,7 @@ public class TCPClient extends NetworkAgent{
 		
 		
 		
-		while(true){
+		while(!killMe){
 			switch( Client_State ){
 			case INIT:
 				log("####### CLIENT STATE: INIT");
@@ -272,30 +272,35 @@ public class TCPClient extends NetworkAgent{
 				log("###### CLIENT STATE: CLOSED");
 				log("###### CLIENT Connection teardown complete");
 				log("###### CLIENT exiting");
-				 while(true){}
+				killThisAgent();
+				break;
 				
 			case LAST_ACK:
 				log("###### CLIENT STATE: LAST_ACK");
-				System.exit(0);
+				killThisAgent();
 				break;
-			
+				
 			case CLOSE_WAIT:
 				log("###### CLIENT STATE: CLOSE_WAIT");
-				System.exit(0);
+				killThisAgent();
 				break;
 				
 			case LISTEN:
 				log("###### CLIENT STATE: LISTEN");
-				System.exit(0);
+				killThisAgent();
+				break;
 				
 			case SYN_RCVD:
 				log("###### CLIENT STATE: SYN_RCVD");
-				System.exit(0);
+				killThisAgent();
+				break;
 				
 			default:
 				log("###### CLIENT STATE: DEFAULT");
-				System.exit(0);		
+				killThisAgent();
+				break;
 			}
-		}		
+		}	
+		finalize();
 	}	
 }

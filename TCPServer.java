@@ -33,7 +33,7 @@ public class TCPServer extends NetworkAgent {
 		
 		
 				
-		while(true){
+		while(!killMe){
 			switch( Server_State ){
 			case INIT:
 				log("###### Server STATE: INIT");
@@ -54,9 +54,9 @@ public class TCPServer extends NetworkAgent {
 				boolean flag = true;
 				while(flag){				
 					receivePacket = new byte[TCP_HEADER_BYTES];
-					datagramSocket.setSoTimeout(0);
-					receiveDatagram = new DatagramPacket(receivePacket, receivePacket.length);
 					try{
+						datagramSocket.setSoTimeout(0);
+						receiveDatagram = new DatagramPacket(receivePacket, receivePacket.length);
 						datagramSocket.receive(receiveDatagram);
 					} catch (SocketException e) {
 						log("Socket port closed externally");
@@ -188,6 +188,7 @@ public class TCPServer extends NetworkAgent {
 						datagramSocket.receive(receiveDatagram);
 					} catch (SocketException e) {
 						log("Socket port closed externally");
+						killThisAgent();
 					} catch (InterruptedIOException e){
 						//Go back to OPEN and re-send packet
 						log("SERVER: SYN_RCVD Timeout");
@@ -207,38 +208,43 @@ public class TCPServer extends NetworkAgent {
 			case CLOSED:
 				log("###### SERVER STATE: CLOSED");
 				log("###### SERVER Connection teardown complete");
-				log("###### SERVER resetting");
-				Server_State = State.INIT;
+				
+				log("###### SERVER exiting");
+				killThisAgent();
+				
+				//log("###### SERVER resetting");
+				//Server_State = State.INIT;
 				break;
 				
 			case TIME_WAIT:
 				log("###### SERVER STATE: CLOSED");
-				System.exit(0);;
+				killThisAgent();
 				break;
 				
 			case FIN_WAIT_1:
 				log("###### SERVER STATE: FIN_WAIT_1");
-				System.exit(0);
+				killThisAgent();
 				break;
 				
 			case FIN_WAIT_2:
 				log("###### SERVER STATE: FIN_WAIT_1");
-				System.exit(0);
+				killThisAgent();
 				break;
 				
 			case OPEN:
 				log("###### SERVER STATE: OPEN");
-				System.exit(0);
+				killThisAgent();
 			
 			case SYN_SENT:
 				log("###### SERVER STATE: SYN_SENT");
-				System.exit(0);		
+				killThisAgent();		
 				
 			default:
 				log("###### SERVER STATE: DEFAULT");
-				System.exit(0);		
+				killThisAgent();		
 			}
 		}
+		finalize();
 	}
 	
 	@Override
