@@ -41,7 +41,7 @@ public class TCPServer extends NetworkAgent {
 				receivePacket = null;
 				sendData = null;
 				receiveDatagram = null;
-				sequence_number = (int) (Math.random() * 1024);
+				sequence_number = 0;
 				ack_number = 0;
 				tcp_flags = 0;
 				
@@ -79,8 +79,8 @@ public class TCPServer extends NetworkAgent {
 				log("###### SERVER STATE: SYN_RCVD");
 				
 				tcp_flags = getTCPFlags(Server_State);
-				ack_number = extractSequenceNumber(receivePacket) + 1;
-				
+				ack_number = extractSequenceNumber(receivePacket);
+				sequence_number = sequence_number + 1;
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
@@ -133,13 +133,23 @@ public class TCPServer extends NetworkAgent {
 					}
 					
 					if (checkTCPFlags( receivePacket, State.ESTABLISHED)){
+						log("Server received packet with SN: " + extractSequenceNumber(receivePacket) + " and AK: " + extractAckNumber(receivePacket));
 						int packetLength = getReceivedPacketLength(receivePacket) - 24;
 						byte[] data = new byte[ packetLength ];
 						data = getReceivedPacketData(receivePacket, packetLength);
-						log("SERVER: Writing " + packetLength + " bytes");
-						fos.write(data);						
+						fos.write(data);
+						
+						tcp_flags = getTCPFlags(Server_State);
+						ack_number = extractSequenceNumber(receivePacket) + packetLength;
+						sequence_number = sequence_number + 1;
+						sendData = new byte[0];
+						sendPacket = addTCPPacketHeader(
+								sendData, src_port, dst_port, sequence_number, 
+								ack_number,	tcp_flags, windowSize, 0, 
+								sendData.length + TCP_HEADER_BYTES);
+						unreliableSendPacket(sendPacket, dst_port);
+						log("Server sending packet with SN: " + sequence_number + " and AK: " + ack_number);						
 					}
-					
 				}
 				
 				break;

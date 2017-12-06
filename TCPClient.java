@@ -62,11 +62,9 @@ public class TCPClient extends NetworkAgent{
 				receivePacket = null;
 				sendData = null;
 				receiveDatagram = null;
-				
-				sequence_number = (int) (Math.random() * 1024);
+				sequence_number = 0;
 				ack_number = 0;
-				tcp_flags = 0;
-				
+				tcp_flags = 0;				
 				Client_State = State.OPEN;
 				break;
 				
@@ -115,7 +113,7 @@ public class TCPClient extends NetworkAgent{
 				
 				tcp_flags = getTCPFlags(Client_State);
 				sequence_number = sequence_number + 1;
-				ack_number = extractSequenceNumber(receivePacket) + 1;
+				ack_number = ack_number + 1;
 				
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
@@ -125,7 +123,7 @@ public class TCPClient extends NetworkAgent{
 				
 				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
-				
+				sequence_number = sequence_number + 1;
 				Client_State = State.ESTABLISHED;
 				break;
 				
@@ -146,14 +144,33 @@ public class TCPClient extends NetworkAgent{
 						break;
 					} 
 					tcp_flags = getTCPFlags(Client_State);
-					sequence_number = sequence_number + sendData.length;
-					//ack_number = extractSequenceNumber(receivePacket) + 1;
 					sendPacket = addTCPPacketHeader(
 							sendData, src_port, dst_port, sequence_number, 
 							ack_number,	tcp_flags, windowSize, 0, 
-							sendData.length + TCP_HEADER_BYTES);
-					log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
-					unreliableSendPacket(sendPacket, dst_port);					
+							sendData.length + TCP_HEADER_BYTES);					
+					
+					boolean gotGoodAck = false;
+					while(!gotGoodAck){
+						unreliableSendPacket(sendPacket, dst_port);
+						log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
+						datagramSocket.setSoTimeout(30);
+						receivePacket = new byte[TCP_HEADER_BYTES];
+						receiveDatagram = new DatagramPacket(receivePacket, TCP_HEADER_BYTES);
+						try{
+							datagramSocket.receive(receiveDatagram);
+						} catch (SocketException e) {
+							log("Socket port closed externally");
+						} catch (InterruptedIOException e){
+							//Go back and resend last packet
+							log("CLIENT: Ack timed out");
+						}
+						log("Client received packet with SN: " + extractSequenceNumber(receivePacket) + " and AK: " + extractAckNumber(receivePacket));
+						if( extractAckNumber(receivePacket) == sequence_number + sendData.length){
+							gotGoodAck = true;
+							sequence_number = sequence_number + sendData.length;
+							ack_number = ack_number + 1;
+						}
+					}
 				}
 				
 				break;
@@ -216,8 +233,6 @@ public class TCPClient extends NetworkAgent{
 						Client_State = State.TIME_WAIT;
 						break;
 					}
-					
-					
 					if( !checkTCPFlags(receivePacket, Client_State) ){
 						Client_State = State.CLOSING;
 						break;
@@ -257,11 +272,7 @@ public class TCPClient extends NetworkAgent{
 				log("###### CLIENT STATE: CLOSED");
 				log("###### CLIENT Connection teardown complete");
 				log("###### CLIENT exiting");
-				 while(true){
-					 if(false)
-						 break;
-				 }
-				break;
+				 while(true){}
 				
 			case LAST_ACK:
 				log("###### CLIENT STATE: LAST_ACK");

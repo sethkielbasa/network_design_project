@@ -254,10 +254,8 @@ public abstract class NetworkAgent implements Runnable {
 	
 	byte[] convertTCPFlags(int flags){
 		byte[] tcp_flags = new byte[2];
-		
 		tcp_flags[0] = (byte) ((flags >> 8) & 0xFF);
-		tcp_flags[1] = (byte) (flags & 0xFF);
-		
+		tcp_flags[1] = (byte) (flags & 0xFF);		
 		return tcp_flags;
 	}
 	
