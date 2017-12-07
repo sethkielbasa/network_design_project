@@ -172,17 +172,19 @@ public abstract class NetworkAgent implements Runnable {
 		
 		int checksum16bit = 0;	
 		for( int i = 0; i < readData.length; i++){
-			int temp = 0;
-			temp = readData[i] & 0xFF;
-			temp = temp << 8;
-			if(i < readData.length - 1){
-				temp = temp | (readData[++i] & 0xFF);
-			} else {
-				temp = temp | 0 & 0xFF;
-			}
-			checksum16bit = checksum16bit + temp;
-			if( checksum16bit > 65535 ){
-				checksum16bit = checksum16bit - 65534;
+			if( i != 16 && i != 17){
+				int temp = 0;
+				temp = readData[i] & 0xFF;
+				temp = temp << 8;
+				if(i < readData.length - 1){
+					temp = temp | (readData[++i] & 0xFF);
+				} else {
+					temp = temp | 0 & 0xFF;
+				}
+				checksum16bit = checksum16bit + temp;
+				if( checksum16bit > 65535 ){
+					checksum16bit = checksum16bit - 65534;
+				}
 			}
 		}
 		if(invertFlag){
@@ -193,6 +195,23 @@ public abstract class NetworkAgent implements Runnable {
 		checksum[1] = (byte) ((checksum16bit >> 8) & 0xFF);
 			
 		return checksum;
+	}
+	
+	boolean compareChecksum( byte[] packet ){
+		byte[] recvd = new byte[2];
+		recvd[0] = packet[16];
+		recvd[1] = packet[17];
+		
+		byte[] calc = new byte[2];
+		calc = calculateChecksum( packet , false);
+		
+		if( (~(recvd[0] ^ calc[0]) == 0) && (~(recvd[1] ^ calc[1]) == 0) ){
+			return true;
+		} else {
+			log("Checksum failed");
+			corruptedCounter++;
+			return false;
+		}	
 	}
 	
 	/*
@@ -236,11 +255,9 @@ public abstract class NetworkAgent implements Runnable {
 		packet[14] = (byte) ((window_size >> 8) & 0xFF);
 		packet[15] = (byte) (window_size & 0xFF);
 		
-		byte[] checksum = new byte[2];
-		checksum = calculateChecksum( readData , true );
-		packet[16] = checksum[0];
-		packet[17] = checksum[1];
-
+		packet[16] = 0; // Do this for checksum calculation
+		packet[17] = 0; // Do this for checksum calculation
+		
 		packet[18] = (byte) ((urgent_pointer >> 8) & 0xFF);
 		packet[19] = (byte) (urgent_pointer & 0xFF);
 
@@ -248,6 +265,12 @@ public abstract class NetworkAgent implements Runnable {
 		packet[21] = (byte) ((length >> 16) & 0xFF);
 		packet[22] = (byte) ((length >> 8) & 0xFF);
 		packet[23] = (byte) (length & 0xFF);
+		
+		byte[] checksum = new byte[2];
+		checksum = calculateChecksum( packet , true );
+		packet[16] = checksum[0];
+		packet[17] = checksum[1];
+
 		
 		return packet;
 	}
@@ -310,6 +333,12 @@ public abstract class NetworkAgent implements Runnable {
 		temp = (temp << 8) | (packet[9] & 0xFF);
 		temp = (temp << 8) | (packet[10] & 0xFF);
 		temp = (temp << 8) | (packet[11] & 0xFF);
+		return temp;
+	}
+	
+	int extractChecksum(byte[] packet){
+		int temp = packet[16] & 0xFF;
+		temp = (temp << 8) | (packet[17] & 0xFF);
 		return temp;
 	}
 	
@@ -406,10 +435,12 @@ public abstract class NetworkAgent implements Runnable {
 	
 	byte[] getReceivedPacketData(byte[] packet, int length){
 		byte[] temp = new byte[length];
+		
 		for(int i = 0; i < length; i++){
 			temp[i] = packet[i + 24];
 		}
 		return temp;
+
 	}
 
 	void transmitPacket(byte[] packet, DatagramSocket socket, InetAddress IPAddress ) throws Exception{
@@ -422,29 +453,6 @@ public abstract class NetworkAgent implements Runnable {
 		socket.send(sendPacket);
 	}
 	
-	/*
-	 * Extract the data from a packet.
-	 * Also compute its checksum and calculate if it is bad.
-	 * Returns null if the checksum is bad
-	 */
-	byte[] destructPacket (byte[] packet){
-		
-		byte[] checksum = new byte[2];
-		int packetLength = getPacketLength( packet);
-		
-		byte[] data = new byte[packetLength];	
-		for( int i = 0; i < packetLength; i++){
-			data[i] = packet[ i + HEADER_SIZE ];
-		}
-		
-		checksum = calculateChecksum( data, false );
-		if( (~(packet[2] ^ checksum[0]) == 0) && (~(packet[3] ^ checksum[1]) == 0) ){
-			return data;
-		} else {
-			corruptedCounter++;
-			return null;
-		}	
-	}	
 	
 	/*
 	 * Rolls the dice and corrupts the data (adds a random bit flip) percentChance% of the time

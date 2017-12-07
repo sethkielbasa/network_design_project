@@ -46,6 +46,7 @@ public class TCPClient extends NetworkAgent{
 		byte[] sendPacket;	//packet (with header) sent to the server
 		byte[] receivePacket; 	//packet (with header) received from the server
 		byte[] sendData;
+		byte[] lastPacket = null;
 		DatagramPacket receiveDatagram;
 		int tcp_flags;
 		
@@ -57,7 +58,7 @@ public class TCPClient extends NetworkAgent{
 		while(!killMe){
 			switch( Client_State ){
 			case INIT:
-				log("####### CLIENT STATE: INIT");
+				log("######################################################## CLIENT STATE: INIT");
 				sendPacket = null;
 				receivePacket = null;
 				sendData = null;
@@ -70,7 +71,7 @@ public class TCPClient extends NetworkAgent{
 				
 				
 			case OPEN:
-				log("###### CLIENT STATE: OPEN");
+				log("####################################################### CLIENT STATE: OPEN");
 				
 				tcp_flags = getTCPFlags(Client_State);
 			
@@ -81,12 +82,12 @@ public class TCPClient extends NetworkAgent{
 						sendData.length + TCP_HEADER_BYTES);
 				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
-				
+				lastPacket = sendPacket;
 				Client_State = State.SYN_SENT;
 				break;
 				
 			case SYN_SENT:
-				log("###### CLIENT STATE: SYN_SENT");
+				log("####################################################### CLIENT STATE: SYN_SENT");
 				
 				datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
 				receivePacket = new byte[TCP_HEADER_BYTES];
@@ -104,8 +105,11 @@ public class TCPClient extends NetworkAgent{
 				
 				//If received packet is not SYN-ACK
 				if( !checkTCPFlags(receivePacket, Client_State) ){
-					Client_State = State.ESTABLISHED;
-					break;
+					if( compareChecksum( receivePacket ) ){
+						log("CLIENT: Don't know what this is");
+						Client_State = State.OPEN;
+						break;
+					}
 				}
 
 				log("Client got SYN-ACK");
@@ -123,12 +127,31 @@ public class TCPClient extends NetworkAgent{
 				
 				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
-				sequence_number = sequence_number + 1;
+				lastPacket = sendPacket;
+				while(true){
+					datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+					receivePacket = new byte[TCP_HEADER_BYTES];
+					receiveDatagram = new DatagramPacket(receivePacket, TCP_HEADER_BYTES);
+					try{
+						datagramSocket.receive(receiveDatagram);
+					} catch (SocketException e) {
+						log("Socket port closed externally");
+					} catch (InterruptedIOException e){
+						//Go back and resend last packet
+						log("CLIENT: Ack timed out");
+					}
+					log("SERVER : " + extractSequenceNumber(receivePacket) + " : " + extractAckNumber(lastPacket));
+					if( compareChecksum( receivePacket ) && ( extractSequenceNumber(receivePacket) == extractAckNumber(lastPacket))){
+						break;						
+					} else
+						unreliableSendPacket(sendPacket, dst_port);
+				}
 				Client_State = State.ESTABLISHED;
+				sequence_number = sequence_number + 1;
 				break;
 				
 			case ESTABLISHED:
-				log("###### CLIENT STATE: ESTABLISHED");
+				log("####################################################### CLIENT STATE: ESTABLISHED");
 				
 				FileInputStream fis = new FileInputStream( imageName );		
 				
@@ -152,8 +175,9 @@ public class TCPClient extends NetworkAgent{
 					boolean gotGoodAck = false;
 					while(!gotGoodAck){
 						unreliableSendPacket(sendPacket, dst_port);
+						lastPacket = sendPacket;
 						log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
-						datagramSocket.setSoTimeout(30);
+						datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
 						receivePacket = new byte[TCP_HEADER_BYTES];
 						receiveDatagram = new DatagramPacket(receivePacket, TCP_HEADER_BYTES);
 						try{
@@ -166,9 +190,11 @@ public class TCPClient extends NetworkAgent{
 						}
 						log("Client received packet with SN: " + extractSequenceNumber(receivePacket) + " and AK: " + extractAckNumber(receivePacket));
 						if( extractAckNumber(receivePacket) == sequence_number + sendData.length){
-							gotGoodAck = true;
-							sequence_number = sequence_number + sendData.length;
-							ack_number = ack_number + 1;
+							if( compareChecksum( receivePacket )){
+								gotGoodAck = true;
+								sequence_number = sequence_number + sendData.length;
+								ack_number = ack_number + 1;
+							}
 						}
 					}
 				}
@@ -176,7 +202,7 @@ public class TCPClient extends NetworkAgent{
 				break;
 				
 			case FIN_WAIT_1:
-				log("###### CLIENT STATE: FIN_WAIT_1");
+				log("####################################################### CLIENT STATE: FIN_WAIT_1");
 				
 				tcp_flags = getTCPFlags(Client_State);
 				
@@ -187,12 +213,13 @@ public class TCPClient extends NetworkAgent{
 						sendData.length + TCP_HEADER_BYTES);
 				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
+				lastPacket = sendPacket;
 				
 				Client_State = State.FIN_WAIT_2;
 				break;
 				
 			case FIN_WAIT_2:
-				log("###### CLIENT STATE: FIN_WAIT_2");
+				log("####################################################### CLIENT STATE: FIN_WAIT_2");
 				
 				datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
 				receivePacket = new byte[TCP_HEADER_BYTES];
@@ -210,13 +237,15 @@ public class TCPClient extends NetworkAgent{
 				
 				//If received packet is not SYN-ACK
 				if( !checkTCPFlags(receivePacket, Client_State) ){
-					Client_State = State.TIME_WAIT;
-					break;
+					if( compareChecksum( receivePacket) ){
+						Client_State = State.TIME_WAIT;
+						break;
+					}
 				}
 				break;
 								
 			case TIME_WAIT:
-				log("###### CLIENT STATE: TIME_WAIT");
+				log("####################################################### CLIENT STATE: TIME_WAIT");
 				
 				//Wait for FIN packet from Server
 				while(true){
@@ -234,14 +263,16 @@ public class TCPClient extends NetworkAgent{
 						break;
 					}
 					if( !checkTCPFlags(receivePacket, Client_State) ){
-						Client_State = State.CLOSING;
-						break;
+						if( compareChecksum( receivePacket )){
+							Client_State = State.CLOSING;
+							break;
+						}
 					}
 				}
 				break;
 				
 			case CLOSING:
-				log("###### CLIENT STATE: CLOSING");
+				log("####################################################### CLIENT STATE: CLOSING");
 				tcp_flags = getTCPFlags(Client_State);		
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
@@ -249,6 +280,7 @@ public class TCPClient extends NetworkAgent{
 						ack_number,	tcp_flags, windowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				unreliableSendPacket(sendPacket, dst_port);
+				lastPacket = sendPacket;
 				
 				//Send FIN-ACK, wait substantial amount of time for response, then close
 				while(true){
@@ -269,34 +301,34 @@ public class TCPClient extends NetworkAgent{
 				break;
 				
 			case CLOSED:
-				log("###### CLIENT STATE: CLOSED");
-				log("###### CLIENT Connection teardown complete");
-				log("###### CLIENT exiting");
+				log("####################################################### CLIENT STATE: CLOSED");
+				log("####################################################### CLIENT Connection teardown complete");
+				log("####################################################### CLIENT exiting");
 				killThisAgent();
 				break;
 				
 			case LAST_ACK:
-				log("###### CLIENT STATE: LAST_ACK");
+				log("####################################################### CLIENT STATE: LAST_ACK");
 				killThisAgent();
 				break;
 				
 			case CLOSE_WAIT:
-				log("###### CLIENT STATE: CLOSE_WAIT");
+				log("####################################################### CLIENT STATE: CLOSE_WAIT");
 				killThisAgent();
 				break;
 				
 			case LISTEN:
-				log("###### CLIENT STATE: LISTEN");
+				log("####################################################### CLIENT STATE: LISTEN");
 				killThisAgent();
 				break;
 				
 			case SYN_RCVD:
-				log("###### CLIENT STATE: SYN_RCVD");
+				log("####################################################### CLIENT STATE: SYN_RCVD");
 				killThisAgent();
 				break;
 				
 			default:
-				log("###### CLIENT STATE: DEFAULT");
+				log("####################################################### CLIENT STATE: DEFAULT");
 				killThisAgent();
 				break;
 			}
