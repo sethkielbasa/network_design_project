@@ -86,7 +86,7 @@ public class TCPServer extends NetworkAgent {
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, windowSize, 0, 
+						ack_number,	tcp_flags, maxWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				lastPacket = sendPacket;
 				
@@ -114,7 +114,7 @@ public class TCPServer extends NetworkAgent {
 							sendData = new byte[0];
 							sendPacket = addTCPPacketHeader(
 									sendData, src_port, dst_port, sequence_number, 
-									ack_number,	tcp_flags, windowSize, 0, 
+									ack_number,	tcp_flags, maxWindowSize, 0, 
 									sendData.length + TCP_HEADER_BYTES);
 							lastPacket = sendPacket;
 							log("Server sending packet with SN: " + sequence_number + " and AK: " + ack_number);
@@ -129,6 +129,7 @@ public class TCPServer extends NetworkAgent {
 			case ESTABLISHED:
 				log("####################################################### SERVER STATE: ESTABLISHED");
 				FileOutputStream fos = new FileOutputStream(imageName);
+				//receive first packet and check flags
 				while(true){
 					
 					datagramSocket.setSoTimeout(SERVER_TIMEOUT);
@@ -138,6 +139,7 @@ public class TCPServer extends NetworkAgent {
 						datagramSocket.receive(receiveDatagram);
 					} catch (SocketException e) {
 						log("Socket port closed externally");
+						break;
 					} catch (InterruptedIOException e){
 						//Go back to OPEN and re-send packet
 						log("SERVER: ESTABLISHED Timeout");
@@ -152,9 +154,11 @@ public class TCPServer extends NetworkAgent {
 						}
 					}
 					
+					//check flags, checksum and Seq number all make sense.
+					//if so, make and send the next packet. If not, send the last ACK sent
 					if (checkTCPFlags( receivePacket, State.ESTABLISHED)){
 						log("SERVER : " + extractSequenceNumber(receivePacket) + " : " + extractAckNumber(lastPacket));
-						if( compareChecksum(receivePacket) && ( extractSequenceNumber(receivePacket) == extractAckNumber(lastPacket))){
+						if( compareChecksum(receivePacket) && ( extractSequenceNumber(receivePacket) ==  ack_number)){
 							log("Server received packet with SN: " + extractSequenceNumber(receivePacket) + " and AK: " + extractAckNumber(receivePacket));
 							int packetLength = getReceivedPacketLength(receivePacket) - 24;
 							byte[] data = new byte[ packetLength ];
@@ -162,13 +166,15 @@ public class TCPServer extends NetworkAgent {
 							fos.write(data);
 							
 							tcp_flags = getTCPFlags(Server_State);
-							ack_number = extractSequenceNumber(receivePacket) + packetLength;
+							//ack_number = extractSequenceNumber(receivePacket) + packetLength; // I think this is wrong
+							ack_number = extractSequenceNumber(receivePacket);
 							sequence_number = sequence_number + 1;
 							sendData = new byte[0];
 							sendPacket = addTCPPacketHeader(
 									sendData, src_port, dst_port, sequence_number, 
-									ack_number,	tcp_flags, windowSize, 0, 
+									ack_number,	tcp_flags, maxWindowSize, 0, 
 									sendData.length + TCP_HEADER_BYTES);
+							ack_number = extractSequenceNumber(receivePacket) + packetLength; //set expected ack_number for the next packet
 							lastPacket = sendPacket;
 							unreliableSendPacket(sendPacket, dst_port);
 							log("Server sending packet with SN: " + sequence_number + " and AK: " + ack_number);						
@@ -188,7 +194,7 @@ public class TCPServer extends NetworkAgent {
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, windowSize, 0, 
+						ack_number,	tcp_flags, maxWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;
@@ -204,7 +210,7 @@ public class TCPServer extends NetworkAgent {
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, windowSize, 0, 
+						ack_number,	tcp_flags, maxWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;

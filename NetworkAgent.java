@@ -47,7 +47,7 @@ public abstract class NetworkAgent implements Runnable {
 	//GBN/SR/TCP variables. All protected by a lock
 	Lock windowLock;
 	LinkedList<byte[]> window;
-	int windowSize;
+	int maxWindowSize;
 	int windowBase; //sequence number at the base of the window
 	int nextSeqNum; //sequence number of the next packet in the window to get handled.
 	
@@ -62,7 +62,7 @@ public abstract class NetworkAgent implements Runnable {
 		this.packetLogging = packetLogging;
 		this.corruptionChance = corruptionChance;
 		this.dropChance = dropChance;
-		this.windowSize = windowSize;
+		this.maxWindowSize = windowSize;
 		
 		corruptedCounter = 0;
 		
@@ -118,18 +118,6 @@ public abstract class NetworkAgent implements Runnable {
 		}
 		System.out.println("Finished " + logPrefix);
 	}
-	
-	/*
-	 * Returns the packetLength field of the packet header
-	 */
-	int getPacketLength(byte[] packet)
-	{
-		int packetLength = packet[4] & 0xFF;
-		packetLength = packetLength << 8;
-		packetLength = packetLength | (packet [5] & 0xFF);
-		assert( packetLength < 0 );
-		return packetLength;
-	}
 		
 	/*
 	 * Tell the server to stop listening to the port and die asap
@@ -139,26 +127,6 @@ public abstract class NetworkAgent implements Runnable {
 		if(datagramSocket != null)
 			datagramSocket.close();
 		killMe = true;
-	}
-	
-	/*
-	 * Returns the sequence number field of the packet.
-	 */
-	int getSequenceNumber(byte[] packet)
-	{		
-		int temp = ((packet[0] & 0xFF) << 8) + (packet[1] & 0xFF);
-		return temp;
-	}	
-	
-	/*
-	 * Given a packet, assuming its checksum is good,
-	 * return the next sequence number to expect from the client
-	 */
-	int getIncrementedSequenceNumber(byte[] packet)
-	{
-		int seq = getSequenceNumber(packet);
-		log("seq =" + seq);
-		return seq + 1;
 	}
 	
 	/*
@@ -232,18 +200,18 @@ public abstract class NetworkAgent implements Runnable {
 			packet[i + TCP_HEADER_BYTES] = readData[i];
 		}
 		
-		packet[0] = (byte) ((source_port >> 8) & 0xFF);
+		packet[0] = (byte) ((source_port >> 8) & 0xFF); 
 		packet[1] = (byte) (source_port & 0xFF);
 		
-		packet[2] = (byte) ((destination_port >> 8) & 0xFF);
+		packet[2] = (byte) ((destination_port >> 8) & 0xFF); 
 		packet[3] = (byte) (destination_port & 0xFF);
 		
-		packet[4] = (byte) ((sequence_number >> 24) & 0xFF);
+		packet[4] = (byte) ((sequence_number >> 24) & 0xFF); 
 		packet[5] = (byte) ((sequence_number >> 16) & 0xFF);
 		packet[6] = (byte) ((sequence_number >> 8) & 0xFF);
 		packet[7] = (byte) (sequence_number & 0xFF);
 		
-		packet[8] = (byte)  ((ack_number >> 24) & 0xFF);
+		packet[8] = (byte)  ((ack_number >> 24) & 0xFF); 
 		packet[9] = (byte)  ((ack_number >> 16) & 0xFF);
 		packet[10] = (byte) ((ack_number >> 8) & 0xFF);
 		packet[11] = (byte) (ack_number & 0xFF);
@@ -252,7 +220,7 @@ public abstract class NetworkAgent implements Runnable {
 		packet[12] = tcp_flags[0];
 		packet[13] = tcp_flags[1];
 		
-		packet[14] = (byte) ((window_size >> 8) & 0xFF);
+		packet[14] = (byte) ((window_size >> 8) & 0xFF); 
 		packet[15] = (byte) (window_size & 0xFF);
 		
 		packet[16] = 0; // Do this for checksum calculation
@@ -477,7 +445,7 @@ public abstract class NetworkAgent implements Runnable {
 	void unreliableSendPacket(byte[] sendPacket, int dst_port) throws Exception
 	{
 		if(dropPacket(dropChance)){
-			log("URDropped packet: " + getSequenceNumber(sendPacket));
+			log("URDropped packet: " + extractSequenceNumber(sendPacket));
 		} else {
 			transmitPacket(corruptDataMaybe(sendPacket, corruptionChance), datagramSocket, dst_port);
 			//log("URSent packet: " + extractSequenceNumber(sendPacket));

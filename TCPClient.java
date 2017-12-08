@@ -14,6 +14,14 @@ public class TCPClient extends NetworkAgent{
 	int SEND_PACKET = 1;
 	int WAIT = 2;
 	
+	int src_port = 10000;
+	int dst_port = 10001;
+	
+	boolean stopListening;
+	
+	int sequence_number = 0;
+	int ack_number = 0;
+	
 	public TCPClient(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance, int timeOut, int windowSize)
 	{
 		super("CLIENT: ", "ClientLog.txt", imageName, port, packetLogging, corruptionChance, dropChance, windowSize);
@@ -37,8 +45,7 @@ public class TCPClient extends NetworkAgent{
 	
 	public void transferImage() throws Exception
 	{
-		int src_port = 10000;
-		int dst_port = 10001;
+		
 		
 		State Client_State = State.INIT;
 		startTime = System.currentTimeMillis();
@@ -50,8 +57,7 @@ public class TCPClient extends NetworkAgent{
 		DatagramPacket receiveDatagram;
 		int tcp_flags;
 		
-		int sequence_number = 0;;
-		int ack_number = 0;
+
 		
 		
 		
@@ -78,7 +84,7 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, windowSize, 0, 
+						ack_number,	tcp_flags, maxWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
@@ -122,7 +128,7 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, windowSize, 0, 
+						ack_number,	tcp_flags, maxWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				
 				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
@@ -153,50 +159,42 @@ public class TCPClient extends NetworkAgent{
 			case ESTABLISHED:
 				log("####################################################### CLIENT STATE: ESTABLISHED");
 				
+				//start GBN window
+				windowBase = sequence_number;
+				
 				FileInputStream fis = new FileInputStream( imageName );		
+				
+				//start receiver thread to continuously receive ACKS as they come.
+				stopListening = false;
+				Thread receiverThread = new Thread(new ReceiverRunner());
+				receiverThread.start();
 				
 				boolean flag = true;
 				while(flag){
+					//make packet
 					sendData = new byte[getAvailableDataSize( fis.available() )];
 					if ((fis.read(sendData) == -1) || (sendData.length == 0)) //if end of file is reached
 					{
 						log("End of file reached. Stop sending");
 						flag = false;
 						fis.close();
+						log("Kill the receiver thread and wait for it to join before moving on.");
+						stopListening = true;
+						receiverThread.join();
 						Client_State = State.FIN_WAIT_1;
 						break;
 					} 
 					tcp_flags = getTCPFlags(Client_State);
 					sendPacket = addTCPPacketHeader(
 							sendData, src_port, dst_port, sequence_number, 
-							ack_number,	tcp_flags, windowSize, 0, 
+							ack_number,	tcp_flags, maxWindowSize, 0, 
 							sendData.length + TCP_HEADER_BYTES);					
-					
-					boolean gotGoodAck = false;
-					while(!gotGoodAck){
-						unreliableSendPacket(sendPacket, dst_port);
-						lastPacket = sendPacket;
-						log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
-						datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
-						receivePacket = new byte[TCP_HEADER_BYTES];
-						receiveDatagram = new DatagramPacket(receivePacket, TCP_HEADER_BYTES);
-						try{
-							datagramSocket.receive(receiveDatagram);
-						} catch (SocketException e) {
-							log("Socket port closed externally");
-						} catch (InterruptedIOException e){
-							//Go back and resend last packet
-							log("CLIENT: Ack timed out");
-						}
-						log("Client received packet with SN: " + extractSequenceNumber(receivePacket) + " and AK: " + extractAckNumber(receivePacket));
-						if( extractAckNumber(receivePacket) == sequence_number + sendData.length){
-							if( compareChecksum( receivePacket )){
-								gotGoodAck = true;
-								sequence_number = sequence_number + sendData.length;
-								ack_number = ack_number + 1;
-							}
-						}
+										
+					while(!rdtSend(sendPacket, sendData.length))
+					{
+						Thread.sleep(0, 1000*500); //sleep 500us to not use all of the CPu
 					}
+					sequence_number += sendData.length;
 				}
 				
 				break;
@@ -209,7 +207,7 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, windowSize, 0, 
+						ack_number,	tcp_flags, maxWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
@@ -277,7 +275,7 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, windowSize, 0, 
+						ack_number,	tcp_flags, maxWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;
@@ -335,4 +333,202 @@ public class TCPClient extends NetworkAgent{
 		}	
 		finalize();
 	}	
+
+	/*
+ 	* Sends the packet given using GB.
+ 	* 
+ 	* Returns true if it could send it off, and false if it can't do anything with the data right now because the window is full.
+ 	*/
+	boolean rdtSend(byte[] sendPacket, int dataLength) throws Exception  
+	{
+		windowLock.lock(); //protect the window from mutual access w/ receiver
+		try{	
+			if(window.size() < maxWindowSize)
+			{
+				//make packet and add it to the window
+				log("Send packet with seq Number: " + extractSequenceNumber(sendPacket));
+				window.add(sendPacket);
+				//if sending first in the window, start the timer
+				if(windowBase == nextSeqNum)
+				{
+					datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+					log("Started reset timer");
+				}
+				nextSeqNum = extractSequenceNumber(sendPacket) + dataLength; //increment sequence number
+		
+				unreliableSendPacket(sendPacket, dst_port);
+				return true;
+			}	
+			else
+			{
+				if(killMe)
+					return true; //pretend it sent just so you can die
+				return false;
+			}
+		} finally {
+			windowLock.unlock(); //unlock the lock no matter what
+		}	
+	}
+	
+	/* call on receiver timeout.
+	 * resends all of the packets in the window up to nextSeqNum
+	 */
+	void onReceiverTimeout() 
+	{
+		log("HandleTimeout Called");
+		try {
+			datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+		} catch (SocketException e) {
+			log("Error resetting timer after timeout");
+			killThisAgent();
+			e.printStackTrace();
+		}
+			
+		windowLock.lock();
+		try{
+			//walk through the window and send everything from the base up to the next sequence number if appropriate
+			if(window.isEmpty()){
+				log("Window is empty");
+				return;
+			}
+			log("Handling receiver timeout.-- \t windowBase: " + windowBase + " nextSeq:" + nextSeqNum);
+			if( maxWindowSize > 1){
+				int targetIndex = 0;
+				//find the window index of the packet just before nextSeqNum
+				for(int i = 0; i< window.size(); i++)
+				{
+					log("TargetIndex = " + targetIndex + " nextSeq = " + nextSeqNum + " seqNum at i = " + extractSequenceNumber(window.get(i)) + " i = " + i + " seq = " + sequence_number);
+					if(extractSequenceNumber(window.get(i)) >= nextSeqNum)
+					{
+						break;
+					}
+					log("TargetIndex = " + targetIndex);
+					targetIndex = i;
+				}
+				for(int i = 0; i<=targetIndex; i++) //TODO fix end condition.
+				{
+					try {
+						byte[] thisPacket = window.get(i);
+						log("goBN-ing, in window: " + (windowBase + i));
+						log("goBN-ing, sequence number: " + (extractSequenceNumber(thisPacket)));
+						unreliableSendPacket(thisPacket, dst_port);
+					} catch (Exception e) {        
+						log("issues sending all the packets in the window on timeout" + nextSeqNum);
+						e.printStackTrace();
+						return;
+					}
+				}
+			} else {
+				try{
+					byte[] thisPacket = window.get(0);
+					unreliableSendPacket(thisPacket, dst_port);
+				} catch (Exception e){
+					e.printStackTrace();
+					return;
+				}
+			}
+		} finally {
+			windowLock.unlock(); //release the lock no matter what
+		}
+	}
+	
+	/*
+	 * What to do if a good packet is received.
+	 */
+	void onReceivedGoodPacket(byte[] receivePacket)
+	{
+		//protect window variables
+		windowLock.lock();
+		try{
+			//update ack_number to send back in next TCP message
+			ack_number = extractAckNumber(receivePacket);
+			//move the window up to the new window base by removing packets from the beginning			
+			if(!window.isEmpty())
+			{
+				windowBase = extractAckNumber(receivePacket) + 1;
+				log("window length is: " + window.size() + ". Moving windowBase up to " + windowBase);
+				byte[] p = window.peekFirst();
+				boolean flag = true;
+				while( flag )
+				{
+					if(!window.isEmpty())
+					{
+						p = window.getFirst();
+						if( extractSequenceNumber(p) < windowBase){
+							p = window.removeFirst();
+							log("\t deleting packet: " + extractSequenceNumber(p) + " from window");
+						} else {
+							flag = false;
+						}
+					} else {
+						log("Window emptied");
+						flag = false;
+						break;
+					}
+					
+				}
+				
+				//stop the timer if there are no packets in flight, reset otherwise.
+				if(windowBase == nextSeqNum)
+				{
+					//stop the timer
+					//myDatagramSocket.setSoTimeout(0);
+				}
+				else
+				{
+					//reset the timer
+					datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+				}
+			}
+		} catch (SocketException e) {
+			log("SocketException resetting timer after good packet received");
+			killThisAgent();
+		} finally {
+			windowLock.unlock(); //unlock no matter what
+		}
+	}
+	
+	/*
+	 * Separate thread to receive packets and populate the GBN window during TCP Established state
+	 */
+	class ReceiverRunner implements Runnable
+	{
+		@Override
+		public void run() {
+			//initialize variables and set timeout
+			byte[] receivePacket = new byte[TCP_HEADER_BYTES];
+			DatagramPacket receiveDatagram = new DatagramPacket(receivePacket, TCP_HEADER_BYTES);
+			try {
+				datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+			} catch (SocketException e1) {
+				log("error setting Timeout during ReceiverRunner Initialization.");
+			}
+			
+			//repeatedly receive packets
+			while(!killMe && !stopListening)
+			{
+				try{
+					datagramSocket.receive(receiveDatagram);
+				} catch (InterruptedIOException e){
+					log("Client timeout");
+					onReceiverTimeout();
+				} catch (SocketException e) {
+					log("Socket port closed externally");
+					return;
+				} catch (Exception e) {
+					return;
+				}
+				
+				log("Client received packet with SN: " + extractSequenceNumber(receivePacket) + " and AK: " + extractAckNumber(receivePacket));
+				if( compareChecksum( receivePacket )){
+					onReceivedGoodPacket(receivePacket);				
+				} else {
+					log("ACK packet was bad");
+				}
+
+			}
+		}	
+	} //\ReceiverThread
+	
 }
+
