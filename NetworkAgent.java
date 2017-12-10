@@ -7,6 +7,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.util.LinkedList;
 import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /*
  * Superclass for UDPClient and UDPServer
@@ -44,12 +45,23 @@ public abstract class NetworkAgent implements Runnable {
 	volatile boolean killMe; //set true to exit as fast as possible
 	DatagramSocket datagramSocket;
 	
-	//GBN/SR/TCP variables. All protected by a lock
-	Lock windowLock;
-	LinkedList<byte[]> window;
-	int maxWindowSize;
-	int windowBase; //sequence number at the base of the window
-	int nextSeqNum; //sequence number of the next packet in the window to get handled.
+	//GBN/SR/TCP send Window variables. All protected by a lock
+	Lock sendWindowLock;
+	LinkedList<byte[]> sendWindow;
+	int maxSendWindowSize;
+	int sendWindowBase; //sequence number at the base of the window
+	int nextSendSeqNum; //sequence number of the next packet in the window to get handled.
+	
+	/////Flow Control variables. (receive window tracking)
+	//receiver side
+	Lock rcvBufferLock;
+	LinkedList<byte[]> receiveBuffer;
+	int maxRcvBufferSize;
+	int lastByteRead;
+	int lastByteRcvd;
+	boolean isLastPacketReceived;
+	//send side
+	int otherRwindSize;
 	
 	//////////shared functions
 	
@@ -62,13 +74,18 @@ public abstract class NetworkAgent implements Runnable {
 		this.packetLogging = packetLogging;
 		this.corruptionChance = corruptionChance;
 		this.dropChance = dropChance;
-		this.maxWindowSize = windowSize;
+		this.maxSendWindowSize = windowSize;
 		
 		corruptedCounter = 0;
 		
-		
 		killMe = false;
 
+		//init flow control
+		rcvBufferLock = new ReentrantLock();
+		maxRcvBufferSize = 10;
+		isLastPacketReceived = false;
+		otherRwindSize = PACKET_SIZE * 1024; //pretend its big
+		
 		if(packetLogging)
 		{
 			try {
@@ -317,7 +334,12 @@ public abstract class NetworkAgent implements Runnable {
 		temp = (temp << 8) | (packet[23] & 0xFF);
 		return temp;
 	}
-		
+	
+	int extractRwindField(byte[] packet) {
+		int temp = packet[14] & 0xFF; 
+		temp = (temp << 8) | packet[15] & 0xFF;
+		return temp;
+	}
 		
 	boolean checkTCPFlags(byte[] packet, State state){
 		//Pull tcp flags from packet

@@ -1,15 +1,25 @@
 package network_design_project;
 import java.io.*;
 import java.net.*;
+import java.util.LinkedList;
+import java.util.concurrent.locks.Lock;
 
 
 public class TCPServer extends NetworkAgent {
-
-	public TCPServer(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance)
+	
+	public TCPServer(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance, int maxRcvBuffer, int applicationWorkTime)
 	{
 		super("SERVER: ", "ServerLog.txt", imageName, port, packetLogging, corruptionChance, dropChance,0);
+		
+		//init flow control
+		maxRcvBufferSize = maxRcvBuffer;
+		receiveBuffer = new LinkedList<byte[]>();
+		isLastPacketReceived = false;
+		
+		//start the application that writes the image.
+		Thread a = new Thread(new ApplicationLayer(applicationWorkTime));
+		a.start();
 	}
-
 	
 	public void receiveImage() throws Exception
 	{
@@ -86,7 +96,7 @@ public class TCPServer extends NetworkAgent {
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, maxWindowSize, 0, 
+						ack_number,	tcp_flags, maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				lastPacket = sendPacket;
 				
@@ -114,7 +124,7 @@ public class TCPServer extends NetworkAgent {
 							sendData = new byte[0];
 							sendPacket = addTCPPacketHeader(
 									sendData, src_port, dst_port, sequence_number, 
-									ack_number,	tcp_flags, maxWindowSize, 0, 
+									ack_number,	tcp_flags, maxSendWindowSize, 0, 
 									sendData.length + TCP_HEADER_BYTES);
 							lastPacket = sendPacket;
 							log("Server sending packet with SN: " + sequence_number + " and AK: " + ack_number);
@@ -128,7 +138,7 @@ public class TCPServer extends NetworkAgent {
 				
 			case ESTABLISHED:
 				log("####################################################### SERVER STATE: ESTABLISHED");
-				FileOutputStream fos = new FileOutputStream(imageName);
+				
 				//receive first packet and check flags
 				while(true){
 					
@@ -149,7 +159,8 @@ public class TCPServer extends NetworkAgent {
 					if( checkTCPFlags( receivePacket, State.FIN_WAIT_1)){
 						if( compareChecksum( receivePacket )){
 							Server_State = State.CLOSE_WAIT;
-							fos.close();
+							//tell the app layer to close its file
+							isLastPacketReceived = true;
 							break;
 						}
 					}
@@ -163,21 +174,29 @@ public class TCPServer extends NetworkAgent {
 							int packetLength = getReceivedPacketLength(receivePacket) - 24;
 							byte[] data = new byte[ packetLength ];
 							data = getReceivedPacketData(receivePacket, packetLength);
-							fos.write(data);
+							int rWinSize = deliverDataToApp(data, extractSequenceNumber(receivePacket));
 							
-							tcp_flags = getTCPFlags(Server_State);
-							//ack_number = extractSequenceNumber(receivePacket) + packetLength; // I think this is wrong
-							ack_number = extractSequenceNumber(receivePacket);
-							sequence_number = sequence_number + 1;
-							sendData = new byte[0];
-							sendPacket = addTCPPacketHeader(
+							//if the transport layer could successfully insert this data into the receive window..
+							if(rWinSize > 0)
+							{
+								tcp_flags = getTCPFlags(Server_State);
+								ack_number = extractSequenceNumber(receivePacket);
+								sequence_number = sequence_number + 1;
+								sendData = new byte[0];
+								sendPacket = addTCPPacketHeader(
 									sendData, src_port, dst_port, sequence_number, 
-									ack_number,	tcp_flags, maxWindowSize, 0, 
+									ack_number,	tcp_flags, rWinSize, 0, 
 									sendData.length + TCP_HEADER_BYTES);
-							ack_number = extractSequenceNumber(receivePacket) + packetLength; //set expected ack_number for the next packet
-							lastPacket = sendPacket;
-							unreliableSendPacket(sendPacket, dst_port);
-							log("Server sending packet with SN: " + sequence_number + " and AK: " + ack_number);						
+								ack_number = extractSequenceNumber(receivePacket) + packetLength; //set expected ack_number for the next packet
+								lastPacket = sendPacket;
+								unreliableSendPacket(sendPacket, dst_port);
+								log("Server sending packet with SN: " + sequence_number + " and AK: " + ack_number);
+							}
+							else
+							{
+								log("Receive Window full");
+								unreliableSendPacket(lastPacket, dst_port);
+							}
 						} else {
 							unreliableSendPacket(lastPacket, dst_port);
 						}
@@ -194,7 +213,7 @@ public class TCPServer extends NetworkAgent {
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, maxWindowSize, 0, 
+						ack_number,	tcp_flags, maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;
@@ -210,7 +229,7 @@ public class TCPServer extends NetworkAgent {
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, maxWindowSize, 0, 
+						ack_number,	tcp_flags, maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;
@@ -276,6 +295,28 @@ public class TCPServer extends NetworkAgent {
 		finalize();
 	}
 	
+	/*
+	 * Tried to put data in the receiveBuffer to deliver to the application layer. 
+	 * 	Returns available window space
+	 * 	Failure if returns less than 0
+	 */
+	public int deliverDataToApp(byte[] data, int seqNum)
+	{
+		rcvBufferLock.lock();
+		
+		//if there is space in the buffer for this data. slip it in
+		if(data.length <= maxRcvBufferSize - (lastByteRcvd - lastByteRead))
+		{
+			receiveBuffer.addLast(data);
+			lastByteRcvd = seqNum + data.length;
+			rcvBufferLock.unlock(); //unlock the buffer no matter what
+			return maxRcvBufferSize - (lastByteRcvd - lastByteRead);
+		} else {
+			rcvBufferLock.unlock(); //unlock the buffer no matter what
+			return -1;
+		}
+		
+	}
 	@Override
 	public void run() {
 		try {
@@ -285,4 +326,76 @@ public class TCPServer extends NetworkAgent {
 		}		
 	}
 
+	class ApplicationLayer implements Runnable
+	{
+		FileOutputStream fos;
+		boolean stopListening;
+		int appWorkTime;
+		
+		public ApplicationLayer(int timeToWork)
+		{
+			appWorkTime = timeToWork;
+		}
+		
+		@Override
+		public void run() {
+			//init global variables
+			try {
+				fos = new FileOutputStream(imageName);
+			} catch (FileNotFoundException e) {
+				log("File not found: " + imageName);
+			}
+			isLastPacketReceived = false;
+			stopListening = false;
+			
+			//repeatedly receive packets
+			while(!killMe && !stopListening)
+			{
+				//Simulate doing some work.
+				try {
+					Thread.sleep(appWorkTime);
+				} catch (InterruptedException e) {
+					log("Application sleep interrupted");
+				}
+				
+				//read all of the data from the buffer
+				try {
+					takeTcpData();
+				} catch (IOException e) {
+					log("IO exception in the application layer");
+				}
+
+			}
+		}	
+		
+		/*
+		 * Take all available data from the receive buffer and write it to file.
+		 * If signaled that the file is empty, close the file.
+		 */
+		public void takeTcpData() throws IOException
+		{
+			byte[] d;
+			int i = 0;
+			
+			log("Application: Stopped to write data to file");
+			rcvBufferLock.lock();
+			
+			while(!receiveBuffer.isEmpty())
+			{
+				d = receiveBuffer.removeFirst();
+				lastByteRead += d.length;
+				fos.write(d);
+				i++;
+			}
+			log("\t Wrote " + i + " bytes to file");
+			
+			if(isLastPacketReceived)
+			{
+				fos.close();
+				stopListening = true; //let this thread end.
+			}
+			
+			rcvBufferLock.unlock();
+		}
+	} //\ReceiverThread
 }

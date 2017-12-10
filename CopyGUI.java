@@ -20,6 +20,11 @@ public class CopyGUI extends Frame {
 	Label serverIm;  //label and text field for received image name
 	TextField serverField;
 	
+	Label rcvBuffer;	//defining the receive buffer size.
+	TextField rcvField;
+	Label rcvWorkTime;	//How much the receiver application 'works' between reading from tcp receive buffer
+	TextField rcvWorkField;
+	
 	Checkbox clientLogging; //check to enable client/server logging to file
 	Checkbox serverLogging;
 	
@@ -149,7 +154,7 @@ public class CopyGUI extends Frame {
 			dropChance = Double.parseDouble(errorPercentage.getText());
 		}
 		
-		server = new TCPServer(serverField.getText(), port, serverLogging.getState(), error, dropChance);
+		server = new TCPServer(serverField.getText(), port, serverLogging.getState(), error, dropChance, Integer.parseInt(rcvField.getText()), Integer.parseInt(rcvWorkField.getText()));
 		
 		//make the thread
 		serverThread = new Thread(server);
@@ -201,6 +206,12 @@ public class CopyGUI extends Frame {
 		serverIm = new Label("Server Image Name");
 		serverField = new TextField("server_image.jpg");
 		
+		rcvBuffer = new Label("Server receive Buffer size:");
+		rcvField = new TextField("4096", 6);
+		
+		rcvWorkTime = new Label("Server time between buffer reads(ms)");;	//How much the receiver application 'works' between reading from tcp receive buffer
+		rcvWorkField = new TextField("100", 6);
+			
 		clientLogging = new Checkbox("Client Logging", true);
 		serverLogging = new Checkbox("Server Logging", true);
 		
@@ -241,6 +252,10 @@ public class CopyGUI extends Frame {
 		add(portField);
 		add(serverIm);
 		add(serverField);
+		add(rcvBuffer);
+		add(rcvField);
+		add(rcvWorkTime);
+		add(rcvWorkField);
 		add(clientLogging);
 		add(serverLogging);
 		add(clientIm);
@@ -326,7 +341,7 @@ public class CopyGUI extends Frame {
 			}
 		});
 		setTitle("Image Transfer-er");
-		setSize(800,230);
+		setSize(800,330);
 		setVisible(true);
 	}
 	

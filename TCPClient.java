@@ -26,10 +26,10 @@ public class TCPClient extends NetworkAgent{
 	{
 		super("CLIENT: ", "ClientLog.txt", imageName, port, packetLogging, corruptionChance, dropChance, windowSize);
 		CLIENT_TIMEOUT = timeOut;		
-		windowLock = new ReentrantLock();
-		window = new LinkedList<byte[]>();
-		windowBase = 0;
-		nextSeqNum = 0;
+		sendWindowLock = new ReentrantLock();
+		sendWindow = new LinkedList<byte[]>();
+		sendWindowBase = 0;
+		nextSendSeqNum = 0;
 		//System.out.println(timeOut);
 	}
 
@@ -57,9 +57,6 @@ public class TCPClient extends NetworkAgent{
 		DatagramPacket receiveDatagram;
 		int tcp_flags;
 		
-
-		
-		
 		
 		while(!killMe){
 			switch( Client_State ){
@@ -84,7 +81,7 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, maxWindowSize, 0, 
+						ack_number,	tcp_flags, maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
@@ -128,7 +125,7 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, maxWindowSize, 0, 
+						ack_number,	tcp_flags, maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				
 				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
@@ -160,7 +157,7 @@ public class TCPClient extends NetworkAgent{
 				log("####################################################### CLIENT STATE: ESTABLISHED");
 				
 				//start GBN window
-				windowBase = sequence_number;
+				sendWindowBase = sequence_number;
 				
 				FileInputStream fis = new FileInputStream( imageName );		
 				
@@ -187,7 +184,7 @@ public class TCPClient extends NetworkAgent{
 					tcp_flags = getTCPFlags(Client_State);
 					sendPacket = addTCPPacketHeader(
 							sendData, src_port, dst_port, sequence_number, 
-							ack_number,	tcp_flags, maxWindowSize, 0, 
+							ack_number,	tcp_flags, maxSendWindowSize, 0, 
 							sendData.length + TCP_HEADER_BYTES);					
 										
 					while(!rdtSend(sendPacket, sendData.length))
@@ -207,7 +204,7 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, maxWindowSize, 0, 
+						ack_number,	tcp_flags, maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
@@ -275,7 +272,7 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, maxWindowSize, 0, 
+						ack_number,	tcp_flags, maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;
@@ -341,32 +338,61 @@ public class TCPClient extends NetworkAgent{
  	*/
 	boolean rdtSend(byte[] sendPacket, int dataLength) throws Exception  
 	{
-		windowLock.lock(); //protect the window from mutual access w/ receiver
-		try{	
-			if(window.size() < maxWindowSize)
+		int cpyRwindSize;
+		//copy lock-protecetd variable into an unshared one.
+		rcvBufferLock.lock();
+		cpyRwindSize = otherRwindSize;
+		rcvBufferLock.unlock();
+		
+		sendWindowLock.lock(); //protect the window from mutual access w/ receiver
+		try{
+			//check if we're flooding the server receive buffer first
+			if(cpyRwindSize < nextSendSeqNum - sendWindowBase)
+			{
+				log("FLOW CONTROL: flooding prevented: " + cpyRwindSize + " available receiver space.");
+				
+				//if we are, pretend that the max send window size is 1
+				if(sendWindow.size() < 1)
+				{
+					log("\tAllowing this one unACKED packet to go out to the receiver");
+					sendWindow.add(sendPacket);
+					//if sending first in the window, start the timer
+					if(sendWindowBase == nextSendSeqNum)
+					{
+						datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+						log("Started reset timer");
+					}
+					nextSendSeqNum = extractSequenceNumber(sendPacket) + dataLength; //increment sequence number
+			
+					unreliableSendPacket(sendPacket, dst_port);
+					return true;
+				}
+			} //normal rdt_Send
+			else if(sendWindow.size() < maxSendWindowSize)
 			{
 				//make packet and add it to the window
 				log("Send packet with seq Number: " + extractSequenceNumber(sendPacket));
-				window.add(sendPacket);
+				sendWindow.add(sendPacket);
 				//if sending first in the window, start the timer
-				if(windowBase == nextSeqNum)
+				if(sendWindowBase == nextSendSeqNum)
 				{
 					datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
 					log("Started reset timer");
 				}
-				nextSeqNum = extractSequenceNumber(sendPacket) + dataLength; //increment sequence number
+				nextSendSeqNum = extractSequenceNumber(sendPacket) + dataLength; //increment sequence number
 		
 				unreliableSendPacket(sendPacket, dst_port);
 				return true;
 			}	
-			else
-			{
-				if(killMe)
-					return true; //pretend it sent just so you can die
-				return false;
-			}
+			
+			
+			//window full: refuse data
+			if(killMe)
+				return true; //pretend it sent just so you can die
+			return false;
+
 		} finally {
-			windowLock.unlock(); //unlock the lock no matter what
+			sendWindowLock.unlock(); //unlock the lock no matter what
 		}	
 	}
 	
@@ -384,21 +410,21 @@ public class TCPClient extends NetworkAgent{
 			e.printStackTrace();
 		}
 			
-		windowLock.lock();
+		sendWindowLock.lock();
 		try{
 			//walk through the window and send everything from the base up to the next sequence number if appropriate
-			if(window.isEmpty()){
+			if(sendWindow.isEmpty()){
 				log("Window is empty");
 				return;
 			}
-			log("Handling receiver timeout.-- \t windowBase: " + windowBase + " nextSeq:" + nextSeqNum);
-			if( maxWindowSize > 1){
+			log("Handling receiver timeout.-- \t windowBase: " + sendWindowBase + " nextSeq:" + nextSendSeqNum);
+			if( maxSendWindowSize > 1){
 				int targetIndex = 0;
 				//find the window index of the packet just before nextSeqNum
-				for(int i = 0; i< window.size(); i++)
+				for(int i = 0; i< sendWindow.size(); i++)
 				{
-					log("TargetIndex = " + targetIndex + " nextSeq = " + nextSeqNum + " seqNum at i = " + extractSequenceNumber(window.get(i)) + " i = " + i + " seq = " + sequence_number);
-					if(extractSequenceNumber(window.get(i)) >= nextSeqNum)
+					log("TargetIndex = " + targetIndex + " nextSeq = " + nextSendSeqNum + " seqNum at i = " + extractSequenceNumber(sendWindow.get(i)) + " i = " + i + " seq = " + sequence_number);
+					if(extractSequenceNumber(sendWindow.get(i)) >= nextSendSeqNum)
 					{
 						break;
 					}
@@ -408,19 +434,19 @@ public class TCPClient extends NetworkAgent{
 				for(int i = 0; i<=targetIndex; i++) //TODO fix end condition.
 				{
 					try {
-						byte[] thisPacket = window.get(i);
-						log("goBN-ing, in window: " + (windowBase + i));
+						byte[] thisPacket = sendWindow.get(i);
+						log("goBN-ing, in window: " + (sendWindowBase + i));
 						log("goBN-ing, sequence number: " + (extractSequenceNumber(thisPacket)));
 						unreliableSendPacket(thisPacket, dst_port);
 					} catch (Exception e) {        
-						log("issues sending all the packets in the window on timeout" + nextSeqNum);
+						log("issues sending all the packets in the window on timeout" + nextSendSeqNum);
 						e.printStackTrace();
 						return;
 					}
 				}
 			} else {
 				try{
-					byte[] thisPacket = window.get(0);
+					byte[] thisPacket = sendWindow.get(0);
 					unreliableSendPacket(thisPacket, dst_port);
 				} catch (Exception e){
 					e.printStackTrace();
@@ -428,7 +454,7 @@ public class TCPClient extends NetworkAgent{
 				}
 			}
 		} finally {
-			windowLock.unlock(); //release the lock no matter what
+			sendWindowLock.unlock(); //release the lock no matter what
 		}
 	}
 	
@@ -437,25 +463,30 @@ public class TCPClient extends NetworkAgent{
 	 */
 	void onReceivedGoodPacket(byte[] receivePacket)
 	{
-		//protect window variables
-		windowLock.lock();
+		//update server window tracking
+		rcvBufferLock.lock();
+		otherRwindSize = extractRwindField(receivePacket);
+		rcvBufferLock.unlock();
+		
+		//protect send window variables
+		sendWindowLock.lock();
 		try{
 			//update ack_number to send back in next TCP message
 			ack_number = extractAckNumber(receivePacket);
 			//move the window up to the new window base by removing packets from the beginning			
-			if(!window.isEmpty())
+			if(!sendWindow.isEmpty())
 			{
-				windowBase = extractAckNumber(receivePacket) + 1;
-				log("window length is: " + window.size() + ". Moving windowBase up to " + windowBase);
-				byte[] p = window.peekFirst();
+				sendWindowBase = extractAckNumber(receivePacket) + 1;
+				log("window length is: " + sendWindow.size() + ". Moving windowBase up to " + sendWindowBase);
+				byte[] p = sendWindow.peekFirst();
 				boolean flag = true;
 				while( flag )
 				{
-					if(!window.isEmpty())
+					if(!sendWindow.isEmpty())
 					{
-						p = window.getFirst();
-						if( extractSequenceNumber(p) < windowBase){
-							p = window.removeFirst();
+						p = sendWindow.getFirst();
+						if( extractSequenceNumber(p) < sendWindowBase){
+							p = sendWindow.removeFirst();
 							log("\t deleting packet: " + extractSequenceNumber(p) + " from window");
 						} else {
 							flag = false;
@@ -469,7 +500,7 @@ public class TCPClient extends NetworkAgent{
 				}
 				
 				//stop the timer if there are no packets in flight, reset otherwise.
-				if(windowBase == nextSeqNum)
+				if(sendWindowBase == nextSendSeqNum)
 				{
 					//stop the timer
 					//myDatagramSocket.setSoTimeout(0);
@@ -484,7 +515,7 @@ public class TCPClient extends NetworkAgent{
 			log("SocketException resetting timer after good packet received");
 			killThisAgent();
 		} finally {
-			windowLock.unlock(); //unlock no matter what
+			sendWindowLock.unlock(); //unlock no matter what
 		}
 	}
 	
