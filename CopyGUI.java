@@ -44,8 +44,12 @@ public class CopyGUI extends Frame {
 	TextField errorPercentage;
 	Label timeoutLabel;
 	TextField timeoutField;
-	Label windowSizeLabel;
+	
+	Label windowSizeLabel;	//set send window size
 	TextField windowSizeField;
+	
+	Label ssthreshLabel;	//set starting ssthresh
+	TextField ssthreshField;
 	
 	Button startServer; //buttons to start server and client
 	Button startClient;
@@ -106,7 +110,7 @@ public class CopyGUI extends Frame {
 		}
 		
 		System.out.println(clientFile);
-		client = new TCPClient(clientFile, port, clientLogging.getState(), error, dropChance, Integer.parseInt(timeoutField.getText()),  Integer.parseInt(windowSizeField.getText()));
+		client = new TCPClient(clientFile, port, clientLogging.getState(), error, dropChance, Integer.parseInt(timeoutField.getText()),  Integer.parseInt(windowSizeField.getText()), Integer.parseInt(ssthreshField.getText()));
 		//make the thread
 		clientThread = new Thread(client);
 		clientThread.start();
@@ -207,10 +211,10 @@ public class CopyGUI extends Frame {
 		serverField = new TextField("server_image.jpg");
 		
 		rcvBuffer = new Label("Server receive Buffer size:");
-		rcvField = new TextField("4096", 6);
+		rcvField = new TextField("1000000", 6);
 		
 		rcvWorkTime = new Label("Server time between buffer reads(ms)");;	//How much the receiver application 'works' between reading from tcp receive buffer
-		rcvWorkField = new TextField("100", 6);
+		rcvWorkField = new TextField("10", 6);
 			
 		clientLogging = new Checkbox("Client Logging", true);
 		serverLogging = new Checkbox("Server Logging", true);
@@ -235,13 +239,16 @@ public class CopyGUI extends Frame {
 		lossContainer.add(dataDrop);
 		
 		errorLabel = new Label("Error rate (%%)");
-		errorPercentage = new TextField("00", 2);
+		errorPercentage = new TextField("05", 2);
 		
 		timeoutLabel = new Label("Timeout (ms)");
 		timeoutField = new TextField("30", 4);
 		
-		windowSizeLabel = new Label("Window size");
-		windowSizeField = new TextField("5", 4);
+		windowSizeLabel = new Label("Starting GBN window size");
+		windowSizeField = new TextField("1", 4);
+		
+		ssthreshLabel = new Label("Starting ssthresh size");	
+		ssthreshField = new TextField("10", 4);
 		
 		startServer = new Button("Start Server");		
 		startClient = new Button("Start Client");

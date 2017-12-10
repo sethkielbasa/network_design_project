@@ -22,14 +22,15 @@ public class TCPClient extends NetworkAgent{
 	int sequence_number = 0;
 	int ack_number = 0;
 	
-	public TCPClient(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance, int timeOut, int windowSize)
+	public TCPClient(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance, int timeOut, int startingWindowSize, int ssthresh)
 	{
-		super("CLIENT: ", "ClientLog.txt", imageName, port, packetLogging, corruptionChance, dropChance, windowSize);
+		super("CLIENT: ", "ClientLog.txt", imageName, port, packetLogging, corruptionChance, dropChance, startingWindowSize);
 		CLIENT_TIMEOUT = timeOut;		
 		sendWindowLock = new ReentrantLock();
 		sendWindow = new LinkedList<byte[]>();
 		sendWindowBase = 0;
 		nextSendSeqNum = 0;
+		slowStartThresh = ssthresh;
 		//System.out.println(timeOut);
 	}
 
@@ -81,7 +82,7 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, maxSendWindowSize, 0, 
+						ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
@@ -125,7 +126,7 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, maxSendWindowSize, 0, 
+						ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				
 				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
@@ -167,31 +168,38 @@ public class TCPClient extends NetworkAgent{
 				receiverThread.start();
 				
 				boolean flag = true;
-				while(flag){
-					//make packet
+				while(flag & !killMe){
 					sendData = new byte[getAvailableDataSize( fis.available() )];
 					if ((fis.read(sendData) == -1) || (sendData.length == 0)) //if end of file is reached
 					{
-						log("End of file reached. Stop sending");
-						flag = false;
-						fis.close();
-						log("Kill the receiver thread and wait for it to join before moving on.");
-						stopListening = true;
-						receiverThread.join();
-						Client_State = State.FIN_WAIT_1;
-						break;
+						if(sendWindow.isEmpty())
+						{
+							log("All packets successfully sent. Kill the receiver thread and wait for it to join before moving on.");
+							
+							fis.close();
+							flag = false;
+							stopListening = true;
+							receiverThread.join();
+							Client_State = State.FIN_WAIT_1;
+							break;
+						}
+						//don't make new packet, but let window get emptied out before moving on
 					} 
-					tcp_flags = getTCPFlags(Client_State);
-					sendPacket = addTCPPacketHeader(
-							sendData, src_port, dst_port, sequence_number, 
-							ack_number,	tcp_flags, maxSendWindowSize, 0, 
-							sendData.length + TCP_HEADER_BYTES);					
-										
-					while(!rdtSend(sendPacket, sendData.length))
+					else
 					{
-						Thread.sleep(0, 1000*500); //sleep 500us to not use all of the CPu
+						//make new packet and send it
+						tcp_flags = getTCPFlags(Client_State);
+						sendPacket = addTCPPacketHeader(
+							sendData, src_port, dst_port, sequence_number, 
+							ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
+							sendData.length + TCP_HEADER_BYTES);
+						
+						while(!rdtSend(sendPacket, sendData.length))
+						{
+							Thread.sleep(0, 1000*500); //sleep 500us to not use all of the CPu
+						}
+						sequence_number += sendData.length;
 					}
-					sequence_number += sendData.length;
 				}
 				
 				break;
@@ -204,7 +212,7 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, maxSendWindowSize, 0, 
+						ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
@@ -272,7 +280,7 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, maxSendWindowSize, 0, 
+						ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;
@@ -349,7 +357,7 @@ public class TCPClient extends NetworkAgent{
 			//check if we're flooding the server receive buffer first
 			if(cpyRwindSize < nextSendSeqNum - sendWindowBase)
 			{
-				log("FLOW CONTROL: flooding prevented: " + cpyRwindSize + " available receiver space.");
+				log("FLOW CONTROL: flooding prevented: " + cpyRwindSize + " available receiver space." + " Unacked PIF: " + (nextSendSeqNum - sendWindowBase));
 				
 				//if we are, pretend that the max send window size is 1
 				if(sendWindow.size() < 1)
@@ -371,7 +379,7 @@ public class TCPClient extends NetworkAgent{
 			else if(sendWindow.size() < maxSendWindowSize)
 			{
 				//make packet and add it to the window
-				log("Send packet with seq Number: " + extractSequenceNumber(sendPacket));
+				log("Make new packet with seq Number: " + extractSequenceNumber(sendPacket));
 				sendWindow.add(sendPacket);
 				//if sending first in the window, start the timer
 				if(sendWindowBase == nextSendSeqNum)
@@ -418,43 +426,114 @@ public class TCPClient extends NetworkAgent{
 				return;
 			}
 			log("Handling receiver timeout.-- \t windowBase: " + sendWindowBase + " nextSeq:" + nextSendSeqNum);
-			if( maxSendWindowSize > 1){
-				int targetIndex = 0;
-				//find the window index of the packet just before nextSeqNum
-				for(int i = 0; i< sendWindow.size(); i++)
+			
+			//Update congestion window size
+			slowStartThresh = (int) Math.ceil(maxSendWindowSize / 2.0);
+			maxSendWindowSize = 1;
+			dupAckCount = 0;
+			retransmitWindow();
+			//singleRetransmit(last_ack);
+			
+			//manage congestion control fsm
+			if(ccState == CCState.SLOW_START)
+			{
+				//no state change
+			} 
+			else if(ccState == CCState.CON_AVO)
+			{
+				ccState = CCState.SLOW_START;
+			}
+			else if(ccState == CCState.FAST_REC)
+			{
+				ccState = CCState.SLOW_START;
+			}
+			log("\tCCState: " + ccState.toString() + " cwind: " + maxSendWindowSize + " ssthresh: " + slowStartThresh); //cc summary
+
+		} finally {
+			sendWindowLock.unlock(); //release the lock no matter what
+		}
+	}
+	
+	/*
+	 * retransmits only the packet after lastAckNumber in the window
+	 * needs to have the window locked
+	 */
+	void singleRetransmit(int lastAckNumber)
+	{
+		//trigger retransmit
+		log("singleRetransmit, last ACK: " + lastAckNumber);
+		if( maxSendWindowSize > 1){
+			int targetIndex = 0;
+			//find the window index of the packet just after lastAckNumber
+			for(int i = 0; i< sendWindow.size(); i++)
+			{
+				targetIndex = i;
+				if(extractSequenceNumber(sendWindow.get(i)) > lastAckNumber)
 				{
-					log("TargetIndex = " + targetIndex + " nextSeq = " + nextSendSeqNum + " seqNum at i = " + extractSequenceNumber(sendWindow.get(i)) + " i = " + i + " seq = " + sequence_number);
-					if(extractSequenceNumber(sendWindow.get(i)) >= nextSendSeqNum)
-					{
-						break;
-					}
-					log("TargetIndex = " + targetIndex);
-					targetIndex = i;
+					break;
 				}
-				for(int i = 0; i<=targetIndex; i++) //TODO fix end condition.
+				
+			}
+			log("\tTargetIndex = " + targetIndex + " for single restransmit");
+			try {
+				byte[] thisPacket = sendWindow.get(targetIndex);
+				unreliableSendPacket(thisPacket, dst_port);
+			} catch (Exception e) {        
+				log("issues sending single retransmit" + nextSendSeqNum);
+				e.printStackTrace();
+				return;
+			}
+		} else {
+			try{
+				byte[] thisPacket = sendWindow.get(0);
+				unreliableSendPacket(thisPacket, dst_port);
+			} catch (Exception e){
+				e.printStackTrace();
+				return;
+			}
+		}
+	}
+	
+	/*
+	 * Sends all packets in the window up to NextSeqNum.
+	 * Needs to have the window locked
+	 */
+	void retransmitWindow()
+	{
+		//trigger retransmit
+		if( maxSendWindowSize > 1){
+			int targetIndex = 0;
+			//find the window index of the packet just before nextSeqNum
+			for(int i = 0; i< sendWindow.size(); i++)
+			{
+				if(extractSequenceNumber(sendWindow.get(i)) >= nextSendSeqNum)
 				{
-					try {
-						byte[] thisPacket = sendWindow.get(i);
-						log("goBN-ing, in window: " + (sendWindowBase + i));
-						log("goBN-ing, sequence number: " + (extractSequenceNumber(thisPacket)));
-						unreliableSendPacket(thisPacket, dst_port);
-					} catch (Exception e) {        
-						log("issues sending all the packets in the window on timeout" + nextSendSeqNum);
-						e.printStackTrace();
-						return;
-					}
+					break;
 				}
-			} else {
-				try{
-					byte[] thisPacket = sendWindow.get(0);
+				targetIndex = i;
+			}
+			log("TargetIndex = " + targetIndex + " for GBN");
+			for(int i = 0; i<=targetIndex; i++) 
+			{
+				try {
+					byte[] thisPacket = sendWindow.get(i);
+					log("goBN-ing, sequence number: " + (extractSequenceNumber(thisPacket)));
 					unreliableSendPacket(thisPacket, dst_port);
-				} catch (Exception e){
+				} catch (Exception e) {        
+					log("issues sending all the packets in the window on timeout" + nextSendSeqNum);
 					e.printStackTrace();
 					return;
 				}
 			}
-		} finally {
-			sendWindowLock.unlock(); //release the lock no matter what
+		} else {
+			try{
+				byte[] thisPacket = sendWindow.get(0);
+				log("goBN-ing, sequence number: " + (extractSequenceNumber(thisPacket)));
+				unreliableSendPacket(thisPacket, dst_port);
+			} catch (Exception e){
+				e.printStackTrace();
+				return;
+			}
 		}
 	}
 	
@@ -463,6 +542,8 @@ public class TCPClient extends NetworkAgent{
 	 */
 	void onReceivedGoodPacket(byte[] receivePacket)
 	{
+		last_ack = ack_number; //hang on to the last ack number received
+		
 		//update server window tracking
 		rcvBufferLock.lock();
 		otherRwindSize = extractRwindField(receivePacket);
@@ -473,6 +554,53 @@ public class TCPClient extends NetworkAgent{
 		try{
 			//update ack_number to send back in next TCP message
 			ack_number = extractAckNumber(receivePacket);
+			
+			//update congestion control variables according to state machine on p275
+			if(last_ack != ack_number)
+			{	//new ACK
+				dupAckCount = 0;
+				
+				if(ccState == CCState.SLOW_START)
+				{
+					maxSendWindowSize++;
+					if(maxSendWindowSize >= slowStartThresh)
+						ccState = CCState.CON_AVO;
+				} 
+				else if(ccState == CCState.CON_AVO)
+				{			
+					//cwind += 1/cwind (avoid divideby0
+					maxSendWindowSize += 1/Math.ceil(maxSendWindowSize);
+				}
+				else if(ccState == CCState.FAST_REC)
+				{
+					maxSendWindowSize = slowStartThresh;
+					ccState = CCState.CON_AVO;
+				}
+			}
+			else
+			{ 	//duplicate ACK
+				
+				if(ccState == CCState.FAST_REC)
+				{
+					//maxSendWindowSize++; //this line caused ridiculous window growth in high error conditions
+					//keep sending normal packets
+				}
+				else //SLOW_START and CON_AVO
+				{
+					dupAckCount++;
+					if(dupAckCount == 3)  //soft error recovery, retransmit dup-ACK'd packet with FR
+					{
+						ccState = CCState.FAST_REC;
+						slowStartThresh = (int) Math.ceil(maxSendWindowSize / 2.0);
+						maxSendWindowSize = slowStartThresh + 3;
+						
+						//singleRetransmit(last_ack);
+						retransmitWindow();
+					}
+				}
+			}
+			log("CCState: " + ccState.name() + " cwind: " + maxSendWindowSize + " ssthresh: " + slowStartThresh + " dupACKs: " + dupAckCount); //cc summary	
+			
 			//move the window up to the new window base by removing packets from the beginning			
 			if(!sendWindow.isEmpty())
 			{

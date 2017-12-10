@@ -92,11 +92,11 @@ public class TCPServer extends NetworkAgent {
 				log("####################################################### SERVER STATE: SYN_RCVD");
 				
 				tcp_flags = getTCPFlags(Server_State);
-				ack_number = extractSequenceNumber(receivePacket) + 1;
+				ack_number = extractSequenceNumber(receivePacket);
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, maxSendWindowSize, 0, 
+						ack_number,	tcp_flags, (int)maxRcvBufferSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				lastPacket = sendPacket;
 				
@@ -119,16 +119,17 @@ public class TCPServer extends NetworkAgent {
 					if( checkTCPFlags( receivePacket, Server_State)){
 						if( compareChecksum( receivePacket )){
 							tcp_flags = getTCPFlags(Server_State);
-							ack_number = extractSequenceNumber(receivePacket) + 1;
+							ack_number = extractSequenceNumber(receivePacket);
 							sequence_number = sequence_number + 1;
 							sendData = new byte[0];
 							sendPacket = addTCPPacketHeader(
 									sendData, src_port, dst_port, sequence_number, 
-									ack_number,	tcp_flags, maxSendWindowSize, 0, 
+									ack_number,	tcp_flags, (int)maxRcvBufferSize, 0, 
 									sendData.length + TCP_HEADER_BYTES);
 							lastPacket = sendPacket;
 							log("Server sending packet with SN: " + sequence_number + " and AK: " + ack_number);
 							unreliableSendPacket(sendPacket, dst_port);
+							ack_number ++;
 							Server_State = State.ESTABLISHED;
 							break;
 						}
@@ -168,7 +169,7 @@ public class TCPServer extends NetworkAgent {
 					//check flags, checksum and Seq number all make sense.
 					//if so, make and send the next packet. If not, send the last ACK sent
 					if (checkTCPFlags( receivePacket, State.ESTABLISHED)){
-						log("SERVER : " + extractSequenceNumber(receivePacket) + " : " + extractAckNumber(lastPacket));
+						log("Received SN: " + extractSequenceNumber(receivePacket) + " AK: " + extractAckNumber(lastPacket));
 						if( compareChecksum(receivePacket) && ( extractSequenceNumber(receivePacket) ==  ack_number)){
 							log("Server received packet with SN: " + extractSequenceNumber(receivePacket) + " and AK: " + extractAckNumber(receivePacket));
 							int packetLength = getReceivedPacketLength(receivePacket) - 24;
@@ -213,7 +214,7 @@ public class TCPServer extends NetworkAgent {
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, maxSendWindowSize, 0, 
+						ack_number,	tcp_flags, (int)maxRcvBufferSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;
@@ -229,7 +230,7 @@ public class TCPServer extends NetworkAgent {
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, maxSendWindowSize, 0, 
+						ack_number,	tcp_flags, (int)maxRcvBufferSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;
@@ -303,14 +304,20 @@ public class TCPServer extends NetworkAgent {
 	public int deliverDataToApp(byte[] data, int seqNum)
 	{
 		rcvBufferLock.lock();
-		
+		int available_space = maxRcvBufferSize - (lastByteRcvd - lastByteRead);
 		//if there is space in the buffer for this data. slip it in
-		if(data.length <= maxRcvBufferSize - (lastByteRcvd - lastByteRead))
+		if(data.length <= available_space)
 		{
 			receiveBuffer.addLast(data);
 			lastByteRcvd = seqNum + data.length;
+			available_space = maxRcvBufferSize - (lastByteRcvd - lastByteRead);
 			rcvBufferLock.unlock(); //unlock the buffer no matter what
-			return maxRcvBufferSize - (lastByteRcvd - lastByteRead);
+			
+			if(available_space > 0xFFFF)
+				available_space = 0xFFFF; //make it fit into 16 bytes.
+			
+			log("Rbuffer status: Max = " + maxRcvBufferSize + " last read = " + lastByteRead + " last rcvd = " + lastByteRcvd + " space = " + available_space);
+			return available_space;
 		} else {
 			rcvBufferLock.unlock(); //unlock the buffer no matter what
 			return -1;
@@ -375,22 +382,26 @@ public class TCPServer extends NetworkAgent {
 		public void takeTcpData() throws IOException
 		{
 			byte[] d;
-			int i = 0;
-			
-			log("Application: Stopped to write data to file");
+			int dataCount = 0;
 			rcvBufferLock.lock();
 			
+			//pull data and write it to file
 			while(!receiveBuffer.isEmpty())
 			{
 				d = receiveBuffer.removeFirst();
 				lastByteRead += d.length;
 				fos.write(d);
-				i++;
+				dataCount++;
 			}
-			log("\t Wrote " + i + " bytes to file");
+			if(dataCount > 0)
+			{
+				log("Application Wrote " + dataCount + " data chunks to file");
+				log("Rbuffer status: Max = " + maxRcvBufferSize + " last read = " + lastByteRead + " last rcvd = " + lastByteRcvd);
+			}
 			
 			if(isLastPacketReceived)
 			{
+				log("Last packet received... Stop listening");
 				fos.close();
 				stopListening = true; //let this thread end.
 			}

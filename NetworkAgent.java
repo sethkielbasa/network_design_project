@@ -22,6 +22,9 @@ public abstract class NetworkAgent implements Runnable {
 		CLOSE_WAIT, LAST_ACK, TIME_WAIT, CLOSING
 	}
 	
+	public enum CCState {
+		SLOW_START, CON_AVO, FAST_REC
+	}
 	//////////Constants		 
 	
 	final int TCP_HEADER_BYTES = 24;
@@ -48,9 +51,14 @@ public abstract class NetworkAgent implements Runnable {
 	//GBN/SR/TCP send Window variables. All protected by a lock
 	Lock sendWindowLock;
 	LinkedList<byte[]> sendWindow;
-	int maxSendWindowSize;
 	int sendWindowBase; //sequence number at the base of the window
 	int nextSendSeqNum; //sequence number of the next packet in the window to get handled.
+	//congestion control
+	double maxSendWindowSize; //its a double to allow small growth
+	int slowStartThresh;
+	CCState ccState;
+	int dupAckCount;
+	int last_ack;
 	
 	/////Flow Control variables. (receive window tracking)
 	//receiver side
@@ -85,6 +93,11 @@ public abstract class NetworkAgent implements Runnable {
 		maxRcvBufferSize = 10;
 		isLastPacketReceived = false;
 		otherRwindSize = PACKET_SIZE * 1024; //pretend its big
+		
+		//init congestionControl
+		ccState = CCState.SLOW_START;
+		dupAckCount = 0;
+		last_ack = 0;
 		
 		if(packetLogging)
 		{
@@ -418,7 +431,7 @@ public abstract class NetworkAgent implements Runnable {
 			data_size = DATA_SIZE; //max 1024 at a time
 		}
 		else if (data_size == 0){
-			log("End of data available. Break");
+			//log("End of data available. Break");
 		}
 		return data_size;
 	}
