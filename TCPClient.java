@@ -20,7 +20,7 @@ public class TCPClient extends NetworkAgent{
 	boolean stopListening;
 	
 	int sequence_number = 0;
-	int ack_number = 0;
+	int send_ack_number = 0;
 	
 	public TCPClient(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance, int timeOut, int startingWindowSize, int ssthresh)
 	{
@@ -68,7 +68,7 @@ public class TCPClient extends NetworkAgent{
 				sendData = null;
 				receiveDatagram = null;
 				sequence_number = 0;
-				ack_number = 0;
+				send_ack_number = 0;
 				tcp_flags = 0;				
 				Client_State = State.OPEN;
 				break;
@@ -82,9 +82,9 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
+						send_ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
-				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
+				log("Client sending packet with SN: " + sequence_number + " and AK: " + send_ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;
 				Client_State = State.SYN_SENT;
@@ -121,15 +121,15 @@ public class TCPClient extends NetworkAgent{
 				
 				tcp_flags = getTCPFlags(Client_State);
 				sequence_number = sequence_number + 1;
-				ack_number = ack_number + 1;
+				send_ack_number = send_ack_number + 1;
 				
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
+						send_ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				
-				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
+				log("Client sending packet with SN: " + sequence_number + " and AK: " + send_ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;
 				while(true){
@@ -191,7 +191,7 @@ public class TCPClient extends NetworkAgent{
 						tcp_flags = getTCPFlags(Client_State);
 						sendPacket = addTCPPacketHeader(
 							sendData, src_port, dst_port, sequence_number, 
-							ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
+							send_ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
 							sendData.length + TCP_HEADER_BYTES);
 						
 						while(!rdtSend(sendPacket, sendData.length))
@@ -212,9 +212,9 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
+						send_ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
-				log("Client sending packet with SN: " + sequence_number + " and AK: " + ack_number);
+				log("Client sending packet with SN: " + sequence_number + " and AK: " + send_ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;
 				
@@ -280,7 +280,7 @@ public class TCPClient extends NetworkAgent{
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
-						ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
+						send_ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;
@@ -542,8 +542,7 @@ public class TCPClient extends NetworkAgent{
 	 */
 	void onReceivedGoodPacket(byte[] receivePacket)
 	{
-		last_ack = ack_number; //hang on to the last ack number received
-		
+
 		//update server window tracking
 		rcvBufferLock.lock();
 		otherRwindSize = extractRwindField(receivePacket);
@@ -553,10 +552,11 @@ public class TCPClient extends NetworkAgent{
 		sendWindowLock.lock();
 		try{
 			//update ack_number to send back in next TCP message
-			ack_number = extractAckNumber(receivePacket);
+			send_ack_number = extractSequenceNumber(receivePacket);
+			//ack_number = extractAckNumber(receivePacket);
 			
 			//update congestion control variables according to state machine on p275
-			if(last_ack != ack_number)
+			if(lastAckReceived != extractAckNumber(receivePacket))
 			{	//new ACK
 				dupAckCount = 0;
 				
@@ -599,6 +599,7 @@ public class TCPClient extends NetworkAgent{
 					}
 				}
 			}
+			lastAckReceived = extractAckNumber(receivePacket);
 			log("CCState: " + ccState.name() + " cwind: " + maxSendWindowSize + " ssthresh: " + slowStartThresh + " dupACKs: " + dupAckCount); //cc summary	
 			
 			//move the window up to the new window base by removing packets from the beginning			

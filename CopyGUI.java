@@ -211,10 +211,10 @@ public class CopyGUI extends Frame {
 		serverField = new TextField("server_image.jpg");
 		
 		rcvBuffer = new Label("Server receive Buffer size:");
-		rcvField = new TextField("1000000", 6);
+		rcvField = new TextField("4096", 10);
 		
 		rcvWorkTime = new Label("Server time between buffer reads(ms)");;	//How much the receiver application 'works' between reading from tcp receive buffer
-		rcvWorkField = new TextField("10", 6);
+		rcvWorkField = new TextField("50", 6);
 			
 		clientLogging = new Checkbox("Client Logging", true);
 		serverLogging = new Checkbox("Server Logging", true);

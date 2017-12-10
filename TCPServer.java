@@ -188,10 +188,10 @@ public class TCPServer extends NetworkAgent {
 									sendData, src_port, dst_port, sequence_number, 
 									ack_number,	tcp_flags, rWinSize, 0, 
 									sendData.length + TCP_HEADER_BYTES);
+								log("Server sending packet with SN: " + sequence_number + " and AK: " + ack_number);
 								ack_number = extractSequenceNumber(receivePacket) + packetLength; //set expected ack_number for the next packet
 								lastPacket = sendPacket;
 								unreliableSendPacket(sendPacket, dst_port);
-								log("Server sending packet with SN: " + sequence_number + " and AK: " + ack_number);
 							}
 							else
 							{

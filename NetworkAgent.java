@@ -58,7 +58,7 @@ public abstract class NetworkAgent implements Runnable {
 	int slowStartThresh;
 	CCState ccState;
 	int dupAckCount;
-	int last_ack;
+	int lastAckReceived;
 	
 	/////Flow Control variables. (receive window tracking)
 	//receiver side
@@ -97,7 +97,7 @@ public abstract class NetworkAgent implements Runnable {
 		//init congestionControl
 		ccState = CCState.SLOW_START;
 		dupAckCount = 0;
-		last_ack = 0;
+		lastAckReceived = 0;
 		
 		if(packetLogging)
 		{
