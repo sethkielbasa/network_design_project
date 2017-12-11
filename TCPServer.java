@@ -92,7 +92,7 @@ public class TCPServer extends NetworkAgent {
 				log("####################################################### SERVER STATE: SYN_RCVD");
 				
 				tcp_flags = getTCPFlags(Server_State);
-				ack_number = extractSequenceNumber(receivePacket);
+				ack_number = extractSequenceNumber(receivePacket) + 1;
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
 						sendData, src_port, dst_port, sequence_number, 
@@ -119,8 +119,8 @@ public class TCPServer extends NetworkAgent {
 					if( checkTCPFlags( receivePacket, Server_State)){
 						if( compareChecksum( receivePacket )){
 							tcp_flags = getTCPFlags(Server_State);
-							ack_number = extractSequenceNumber(receivePacket);
-							sequence_number = sequence_number + 1;
+							ack_number = extractSequenceNumber(receivePacket) + 1;
+							sequence_number = extractAckNumber(receivePacket);
 							sendData = new byte[0];
 							sendPacket = addTCPPacketHeader(
 									sendData, src_port, dst_port, sequence_number, 
@@ -129,8 +129,9 @@ public class TCPServer extends NetworkAgent {
 							lastPacket = sendPacket;
 							log("Server sending packet with SN: " + sequence_number + " and AK: " + ack_number);
 							unreliableSendPacket(sendPacket, dst_port);
-							ack_number ++;
 							Server_State = State.ESTABLISHED;
+							//ack_number++;
+							System.out.println("server ack " + ack_number);
 							break;
 						}
 					}
@@ -139,7 +140,7 @@ public class TCPServer extends NetworkAgent {
 				
 			case ESTABLISHED:
 				log("####################################################### SERVER STATE: ESTABLISHED");
-				
+				System.out.println("server ack " + ack_number);
 				//receive first packet and check flags
 				while(true){
 					
@@ -170,6 +171,7 @@ public class TCPServer extends NetworkAgent {
 					//if so, make and send the next packet. If not, send the last ACK sent
 					if (checkTCPFlags( receivePacket, State.ESTABLISHED)){
 						log("Received SN: " + extractSequenceNumber(receivePacket) + " AK: " + extractAckNumber(lastPacket));
+						System.out.println("server ack " + ack_number);
 						if( compareChecksum(receivePacket) && ( extractSequenceNumber(receivePacket) ==  ack_number)){
 							log("Server received packet with SN: " + extractSequenceNumber(receivePacket) + " and AK: " + extractAckNumber(receivePacket));
 							int packetLength = getReceivedPacketLength(receivePacket) - 24;
@@ -181,7 +183,7 @@ public class TCPServer extends NetworkAgent {
 							if(rWinSize > 0)
 							{
 								tcp_flags = getTCPFlags(Server_State);
-								ack_number = extractSequenceNumber(receivePacket);
+								ack_number = extractSequenceNumber(receivePacket) + getReceivedPacketData(receivePacket, receivePacket.length - 24).length;
 								sequence_number = sequence_number + 1;
 								sendData = new byte[0];
 								sendPacket = addTCPPacketHeader(
@@ -189,7 +191,7 @@ public class TCPServer extends NetworkAgent {
 									ack_number,	tcp_flags, rWinSize, 0, 
 									sendData.length + TCP_HEADER_BYTES);
 								log("Server sending packet with SN: " + sequence_number + " and AK: " + ack_number);
-								ack_number = extractSequenceNumber(receivePacket) + packetLength; //set expected ack_number for the next packet
+								//ack_number = extractSequenceNumber(receivePacket) + packetLength; //set expected ack_number for the next packet
 								lastPacket = sendPacket;
 								unreliableSendPacket(sendPacket, dst_port);
 							}

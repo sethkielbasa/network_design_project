@@ -119,8 +119,8 @@ public class TCPClient extends NetworkAgent{
 				log("Client received packet with SN: " + extractSequenceNumber(receivePacket) + " and AK: " + extractAckNumber(receivePacket));
 				
 				tcp_flags = getTCPFlags(Client_State);
-				sequence_number = sequence_number + 1;
-				send_ack_number = send_ack_number + 1;
+				sequence_number = extractAckNumber(receivePacket);
+				send_ack_number = extractSequenceNumber(receivePacket) + 1;
 				
 				sendData = new byte[0];
 				sendPacket = addTCPPacketHeader(
@@ -143,15 +143,18 @@ public class TCPClient extends NetworkAgent{
 						//Go back and resend last packet
 						log("CLIENT: Ack timed out");
 					}
-					log("SERVER : " + extractSequenceNumber(receivePacket) + " : " + extractAckNumber(lastPacket));
+					log("CLIENT : " + extractSequenceNumber(receivePacket) + " : " + extractAckNumber(lastPacket));
 					if( compareChecksum( receivePacket ) && ( extractSequenceNumber(receivePacket) == extractAckNumber(lastPacket))){
 						updateRTTTrackerIfAppropriate(receivePacket);
 						break;						
-					} else
+					} else{
+						log("Client sending packet with SN: " + sequence_number + " and AK: " + send_ack_number);
 						unreliableSendPacket(sendPacket, dst_port);
+					}
 				}
 				Client_State = State.ESTABLISHED;
-				sequence_number = sequence_number + 1;
+				sequence_number = extractAckNumber(receivePacket);
+				send_ack_number = extractSequenceNumber(receivePacket) + 1;
 				break;
 				
 			case ESTABLISHED:
@@ -284,6 +287,7 @@ public class TCPClient extends NetworkAgent{
 						sendData, src_port, dst_port, sequence_number, 
 						send_ack_number,	tcp_flags, (int)maxSendWindowSize, 0, 
 						sendData.length + TCP_HEADER_BYTES);
+				log("Client sending packet with SN: " + sequence_number + " and AK: " + send_ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;
 				
@@ -373,7 +377,7 @@ public class TCPClient extends NetworkAgent{
 						log("Started reset timer");
 					}
 					nextSendSeqNum = extractSequenceNumber(sendPacket) + dataLength; //increment sequence number
-			
+					log("Client sending packet with SN: " + sequence_number + " and AK: " + send_ack_number);
 					unreliableSendPacket(sendPacket, dst_port);
 					return true;
 				}
@@ -390,7 +394,7 @@ public class TCPClient extends NetworkAgent{
 					log("Started reset timer");
 				}
 				nextSendSeqNum = extractSequenceNumber(sendPacket) + dataLength; //increment sequence number
-		
+				log("Client sending packet with SN: " + sequence_number + " and AK: " + send_ack_number);
 				unreliableSendPacket(sendPacket, dst_port);
 				return true;
 			}	
@@ -481,6 +485,7 @@ public class TCPClient extends NetworkAgent{
 				try {
 					byte[] thisPacket = sendWindow.get(i);
 					log("goBN-ing, sequence number: " + (extractSequenceNumber(thisPacket)));
+					log("Client sending packet with SN: " + extractSequenceNumber(thisPacket) + " and AK: " + extractAckNumber(thisPacket));
 					unreliableSendPacket(thisPacket, dst_port);
 					
 					//disableRTT tracking if a packet is sent twice
@@ -497,6 +502,7 @@ public class TCPClient extends NetworkAgent{
 			try{
 				byte[] thisPacket = sendWindow.get(0);
 				log("goBN-ing, sequence number: " + (extractSequenceNumber(thisPacket)));
+				log("Client sending packet with SN: " + sequence_number + " and AK: " + send_ack_number);
 				unreliableSendPacket(thisPacket, dst_port);
 			} catch (Exception e){
 				e.printStackTrace();
@@ -522,7 +528,7 @@ public class TCPClient extends NetworkAgent{
 		sendWindowLock.lock();
 		try{
 			//update ack_number to send back in next TCP message
-			send_ack_number = extractSequenceNumber(receivePacket);
+			send_ack_number = extractSequenceNumber(receivePacket) + 1;
 			//ack_number = extractAckNumber(receivePacket);
 			
 			//update congestion control variables according to state machine on p275
