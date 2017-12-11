@@ -71,6 +71,12 @@ public abstract class NetworkAgent implements Runnable {
 	//send side
 	int otherRwindSize;
 	
+	//Dynamic timeout control variables
+	long trackingStartTime; //timestamp in ms at the beginning of the tracking
+	int trackingSeqNum; //sequence number of the packet being tracked. (-1 if nothing is tracked)
+	double estimatedRTT; //variables from textbook (in ms)
+	double devRTT;
+	
 	//////////shared functions
 	
 	NetworkAgent(String logPrefix, String logFn, String imageName, int port, 
@@ -98,6 +104,11 @@ public abstract class NetworkAgent implements Runnable {
 		ccState = CCState.SLOW_START;
 		dupAckCount = 0;
 		lastAckReceived = 0;
+		
+		//init dynamic timeout
+		trackingSeqNum = -1; //sequence number of the packet being tracked. (-1 if nothing is tracked)
+		estimatedRTT = 1000; //variable from textbook
+		devRTT = 0;
 		
 		if(packetLogging)
 		{
@@ -482,6 +493,12 @@ public abstract class NetworkAgent implements Runnable {
 		if(dropPacket(dropChance)){
 			log("URDropped packet: " + extractSequenceNumber(sendPacket));
 		} else {
+			//start tracking packet RTT if appropriate
+			if(trackingSeqNum < 0) 
+			{//nothing is being tracked, so start tracking this packet
+				trackingSeqNum = extractSequenceNumber(sendPacket);
+				trackingStartTime = System.currentTimeMillis();
+			}
 			transmitPacket(corruptDataMaybe(sendPacket, corruptionChance), datagramSocket, dst_port);
 			//log("URSent packet: " + extractSequenceNumber(sendPacket));
 		}
@@ -492,6 +509,43 @@ public abstract class NetworkAgent implements Runnable {
 			return true;
 		} else {
 			return false;
+		}
+	}
+	
+	//return the timeoutInterval in ms calculated from estimatedRtt and devRTT
+	int getTimeoutInterval()
+	{
+		int to = (int) (estimatedRTT + 4 * devRTT);
+		return to; 
+	}
+	
+	//given a new sample RTT,
+	// recalculate estimatedRtt and devRTT
+	void assimilateNewSampleRTT(long newSampleRTT)
+	{
+		//from textbook pg 240
+		estimatedRTT = 0.875 * estimatedRTT + 0.125 * newSampleRTT;
+		devRTT = 0.75 * devRTT + 0.25 * Math.abs(newSampleRTT - estimatedRTT);
+		
+		log("New timeoutInterval: " + getTimeoutInterval());
+		log("\tsample: " + newSampleRTT);
+		log("\testimated: " + estimatedRTT + " devRTT: " + devRTT);
+	}
+	
+	/*
+	 * Call after receiving this packet.
+	 * If this packet's RTT is being tracked, update the running RTT variables
+	 */
+	void updateRTTTrackerIfAppropriate(byte[] packet)
+	{
+		if(extractAckNumber(packet) >= trackingSeqNum)
+		{
+			//calculate sample RTT because the packet you've been tracking has just been ACK'ed
+			long endTime = System.currentTimeMillis();
+			assimilateNewSampleRTT(endTime - trackingStartTime);
+			
+			//flag that you're not tracking any packets now
+			trackingSeqNum = -1;
 		}
 	}
 }

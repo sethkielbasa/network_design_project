@@ -42,8 +42,6 @@ public class CopyGUI extends Frame {
 	Checkbox dataDrop;
 	Label errorLabel;
 	TextField errorPercentage;
-	Label timeoutLabel;
-	TextField timeoutField;
 	
 	Label windowSizeLabel;	//set send window size
 	TextField windowSizeField;
@@ -110,7 +108,7 @@ public class CopyGUI extends Frame {
 		}
 		
 		System.out.println(clientFile);
-		client = new TCPClient(clientFile, port, clientLogging.getState(), error, dropChance, Integer.parseInt(timeoutField.getText()),  Integer.parseInt(windowSizeField.getText()), Integer.parseInt(ssthreshField.getText()));
+		client = new TCPClient(clientFile, port, clientLogging.getState(), error, dropChance, Integer.parseInt(windowSizeField.getText()), Integer.parseInt(ssthreshField.getText()));
 		//make the thread
 		clientThread = new Thread(client);
 		clientThread.start();
@@ -241,9 +239,6 @@ public class CopyGUI extends Frame {
 		errorLabel = new Label("Error rate (%%)");
 		errorPercentage = new TextField("05", 2);
 		
-		timeoutLabel = new Label("Timeout (ms)");
-		timeoutField = new TextField("30", 4);
-		
 		windowSizeLabel = new Label("Starting GBN window size");
 		windowSizeField = new TextField("1", 4);
 		
@@ -271,8 +266,6 @@ public class CopyGUI extends Frame {
 		add(new Panel()); //spacer
 		add(errorLabel);
 		add(errorPercentage);
-		add(timeoutLabel);
-		add(timeoutField);
 		add(windowSizeLabel);
 		add(windowSizeField);
 		add(startServer);

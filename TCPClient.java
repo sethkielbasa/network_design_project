@@ -9,7 +9,6 @@ public class TCPClient extends NetworkAgent{
 	long startTime;
 	long endTime;
 	
-	int CLIENT_TIMEOUT;	
 	int INIT = 0;
 	int SEND_PACKET = 1;
 	int WAIT = 2;
@@ -22,10 +21,9 @@ public class TCPClient extends NetworkAgent{
 	int sequence_number = 0;
 	int send_ack_number = 0;
 	
-	public TCPClient(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance, int timeOut, int startingWindowSize, int ssthresh)
+	public TCPClient(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance, int startingWindowSize, int ssthresh)
 	{
 		super("CLIENT: ", "ClientLog.txt", imageName, port, packetLogging, corruptionChance, dropChance, startingWindowSize);
-		CLIENT_TIMEOUT = timeOut;		
 		sendWindowLock = new ReentrantLock();
 		sendWindow = new LinkedList<byte[]>();
 		sendWindowBase = 0;
@@ -93,7 +91,7 @@ public class TCPClient extends NetworkAgent{
 			case SYN_SENT:
 				log("####################################################### CLIENT STATE: SYN_SENT");
 				
-				datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+				datagramSocket.setSoTimeout(getTimeoutInterval());
 				receivePacket = new byte[TCP_HEADER_BYTES];
 				receiveDatagram = new DatagramPacket(receivePacket, TCP_HEADER_BYTES);
 				try{
@@ -110,6 +108,7 @@ public class TCPClient extends NetworkAgent{
 				//If received packet is not SYN-ACK
 				if( !checkTCPFlags(receivePacket, Client_State) ){
 					if( compareChecksum( receivePacket ) ){
+						updateRTTTrackerIfAppropriate(receivePacket);
 						log("CLIENT: Don't know what this is");
 						Client_State = State.OPEN;
 						break;
@@ -133,7 +132,7 @@ public class TCPClient extends NetworkAgent{
 				unreliableSendPacket(sendPacket, dst_port);
 				lastPacket = sendPacket;
 				while(true){
-					datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+					datagramSocket.setSoTimeout(getTimeoutInterval());
 					receivePacket = new byte[TCP_HEADER_BYTES];
 					receiveDatagram = new DatagramPacket(receivePacket, TCP_HEADER_BYTES);
 					try{
@@ -146,6 +145,7 @@ public class TCPClient extends NetworkAgent{
 					}
 					log("SERVER : " + extractSequenceNumber(receivePacket) + " : " + extractAckNumber(lastPacket));
 					if( compareChecksum( receivePacket ) && ( extractSequenceNumber(receivePacket) == extractAckNumber(lastPacket))){
+						updateRTTTrackerIfAppropriate(receivePacket);
 						break;						
 					} else
 						unreliableSendPacket(sendPacket, dst_port);
@@ -224,7 +224,7 @@ public class TCPClient extends NetworkAgent{
 			case FIN_WAIT_2:
 				log("####################################################### CLIENT STATE: FIN_WAIT_2");
 				
-				datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+				datagramSocket.setSoTimeout(getTimeoutInterval());
 				receivePacket = new byte[TCP_HEADER_BYTES];
 				receiveDatagram = new DatagramPacket(receivePacket, TCP_HEADER_BYTES);
 				try{
@@ -241,6 +241,7 @@ public class TCPClient extends NetworkAgent{
 				//If received packet is not SYN-ACK
 				if( !checkTCPFlags(receivePacket, Client_State) ){
 					if( compareChecksum( receivePacket) ){
+						updateRTTTrackerIfAppropriate(receivePacket);
 						Client_State = State.TIME_WAIT;
 						break;
 					}
@@ -252,7 +253,7 @@ public class TCPClient extends NetworkAgent{
 				
 				//Wait for FIN packet from Server
 				while(true){
-					datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+					datagramSocket.setSoTimeout(getTimeoutInterval());
 					receivePacket = new byte[TCP_HEADER_BYTES];
 					receiveDatagram = new DatagramPacket(receivePacket, TCP_HEADER_BYTES);
 					try{
@@ -266,7 +267,8 @@ public class TCPClient extends NetworkAgent{
 						break;
 					}
 					if( !checkTCPFlags(receivePacket, Client_State) ){
-						if( compareChecksum( receivePacket )){
+						if( compareChecksum( receivePacket )){			
+							updateRTTTrackerIfAppropriate(receivePacket);
 							Client_State = State.CLOSING;
 							break;
 						}
@@ -367,7 +369,7 @@ public class TCPClient extends NetworkAgent{
 					//if sending first in the window, start the timer
 					if(sendWindowBase == nextSendSeqNum)
 					{
-						datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+						datagramSocket.setSoTimeout(getTimeoutInterval());
 						log("Started reset timer");
 					}
 					nextSendSeqNum = extractSequenceNumber(sendPacket) + dataLength; //increment sequence number
@@ -384,7 +386,7 @@ public class TCPClient extends NetworkAgent{
 				//if sending first in the window, start the timer
 				if(sendWindowBase == nextSendSeqNum)
 				{
-					datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+					datagramSocket.setSoTimeout(getTimeoutInterval());
 					log("Started reset timer");
 				}
 				nextSendSeqNum = extractSequenceNumber(sendPacket) + dataLength; //increment sequence number
@@ -411,7 +413,7 @@ public class TCPClient extends NetworkAgent{
 	{
 		log("HandleTimeout Called");
 		try {
-			datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+			datagramSocket.setSoTimeout(getTimeoutInterval());
 		} catch (SocketException e) {
 			log("Error resetting timer after timeout");
 			killThisAgent();
@@ -432,7 +434,6 @@ public class TCPClient extends NetworkAgent{
 			maxSendWindowSize = 1;
 			dupAckCount = 0;
 			retransmitWindow();
-			//singleRetransmit(last_ack);
 			
 			//manage congestion control fsm
 			if(ccState == CCState.SLOW_START)
@@ -454,45 +455,6 @@ public class TCPClient extends NetworkAgent{
 		}
 	}
 	
-	/*
-	 * retransmits only the packet after lastAckNumber in the window
-	 * needs to have the window locked
-	 */
-	void singleRetransmit(int lastAckNumber)
-	{
-		//trigger retransmit
-		log("singleRetransmit, last ACK: " + lastAckNumber);
-		if( maxSendWindowSize > 1){
-			int targetIndex = 0;
-			//find the window index of the packet just after lastAckNumber
-			for(int i = 0; i< sendWindow.size(); i++)
-			{
-				targetIndex = i;
-				if(extractSequenceNumber(sendWindow.get(i)) > lastAckNumber)
-				{
-					break;
-				}
-				
-			}
-			log("\tTargetIndex = " + targetIndex + " for single restransmit");
-			try {
-				byte[] thisPacket = sendWindow.get(targetIndex);
-				unreliableSendPacket(thisPacket, dst_port);
-			} catch (Exception e) {        
-				log("issues sending single retransmit" + nextSendSeqNum);
-				e.printStackTrace();
-				return;
-			}
-		} else {
-			try{
-				byte[] thisPacket = sendWindow.get(0);
-				unreliableSendPacket(thisPacket, dst_port);
-			} catch (Exception e){
-				e.printStackTrace();
-				return;
-			}
-		}
-	}
 	
 	/*
 	 * Sends all packets in the window up to NextSeqNum.
@@ -502,6 +464,7 @@ public class TCPClient extends NetworkAgent{
 	{
 		//trigger retransmit
 		if( maxSendWindowSize > 1){
+			
 			int targetIndex = 0;
 			//find the window index of the packet just before nextSeqNum
 			for(int i = 0; i< sendWindow.size(); i++)
@@ -519,6 +482,11 @@ public class TCPClient extends NetworkAgent{
 					byte[] thisPacket = sendWindow.get(i);
 					log("goBN-ing, sequence number: " + (extractSequenceNumber(thisPacket)));
 					unreliableSendPacket(thisPacket, dst_port);
+					
+					//disableRTT tracking if a packet is sent twice
+					if(extractSequenceNumber(thisPacket) == trackingSeqNum)
+						trackingSeqNum = -1;
+					
 				} catch (Exception e) {        
 					log("issues sending all the packets in the window on timeout" + nextSendSeqNum);
 					e.printStackTrace();
@@ -542,7 +510,9 @@ public class TCPClient extends NetworkAgent{
 	 */
 	void onReceivedGoodPacket(byte[] receivePacket)
 	{
-
+		//update RTT calculation
+		updateRTTTrackerIfAppropriate(receivePacket);
+		
 		//update server window tracking
 		rcvBufferLock.lock();
 		otherRwindSize = extractRwindField(receivePacket);
@@ -594,7 +564,6 @@ public class TCPClient extends NetworkAgent{
 						slowStartThresh = (int) Math.ceil(maxSendWindowSize / 2.0);
 						maxSendWindowSize = slowStartThresh + 3;
 						
-						//singleRetransmit(last_ack);
 						retransmitWindow();
 					}
 				}
@@ -637,7 +606,7 @@ public class TCPClient extends NetworkAgent{
 				else
 				{
 					//reset the timer
-					datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+					datagramSocket.setSoTimeout(getTimeoutInterval());
 				}
 			}
 		} catch (SocketException e) {
@@ -659,7 +628,7 @@ public class TCPClient extends NetworkAgent{
 			byte[] receivePacket = new byte[TCP_HEADER_BYTES];
 			DatagramPacket receiveDatagram = new DatagramPacket(receivePacket, TCP_HEADER_BYTES);
 			try {
-				datagramSocket.setSoTimeout(CLIENT_TIMEOUT);
+				datagramSocket.setSoTimeout(getTimeoutInterval());
 			} catch (SocketException e1) {
 				log("error setting Timeout during ReceiverRunner Initialization.");
 			}
