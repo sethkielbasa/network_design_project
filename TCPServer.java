@@ -253,7 +253,7 @@ public class TCPServer extends NetworkAgent {
 						killThisAgent();
 					} catch (InterruptedIOException e){
 						//Go back to OPEN and re-send packet
-						log("SERVER: SYN_RCVD Timeout");
+						log("SERVER: LAST_ACK Timeout");
 					}
 					if( checkTCPFlags( receivePacket, State.FIN_WAIT_1)){
 						Server_State = State.CLOSE_WAIT;

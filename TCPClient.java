@@ -249,6 +249,8 @@ public class TCPClient extends NetworkAgent{
 						Client_State = State.TIME_WAIT;
 						break;
 					}
+				} else {
+					Client_State = State.FIN_WAIT_1;
 				}
 				break;
 								
@@ -294,6 +296,7 @@ public class TCPClient extends NetworkAgent{
 				
 				//Send FIN-ACK, wait substantial amount of time for response, then close
 				while(true){
+					unreliableSendPacket(sendPacket, dst_port);
 					datagramSocket.setSoTimeout(500);
 					receivePacket = new byte[TCP_HEADER_BYTES];
 					receiveDatagram = new DatagramPacket(receivePacket, TCP_HEADER_BYTES);
