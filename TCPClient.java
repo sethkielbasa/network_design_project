@@ -580,7 +580,7 @@ public class TCPClient extends NetworkAgent{
 			//move the window up to the new window base by removing packets from the beginning			
 			if(!sendWindow.isEmpty())
 			{
-				sendWindowBase = extractAckNumber(receivePacket) + 1;
+				sendWindowBase = extractAckNumber(receivePacket);
 				log("window length is: " + sendWindow.size() + ". Moving windowBase up to " + sendWindowBase);
 				byte[] p = sendWindow.peekFirst();
 				boolean flag = true;

@@ -170,8 +170,6 @@ public class TCPServer extends NetworkAgent {
 					//check flags, checksum and Seq number all make sense.
 					//if so, make and send the next packet. If not, send the last ACK sent
 					if (checkTCPFlags( receivePacket, State.ESTABLISHED)){
-						log("Received SN: " + extractSequenceNumber(receivePacket) + " AK: " + extractAckNumber(lastPacket));
-						System.out.println("server ack " + ack_number);
 						if( compareChecksum(receivePacket) && ( extractSequenceNumber(receivePacket) ==  ack_number)){
 							log("Server received packet with SN: " + extractSequenceNumber(receivePacket) + " and AK: " + extractAckNumber(receivePacket));
 							int packetLength = getReceivedPacketLength(receivePacket) - 24;
@@ -198,6 +196,7 @@ public class TCPServer extends NetworkAgent {
 							else
 							{
 								log("Receive Window full");
+								log("\tRbuffer status: Max = " + maxRcvBufferSize + " last read = " + lastByteRead + " last rcvd = " + lastByteRcvd);
 								unreliableSendPacket(lastPacket, dst_port);
 							}
 						} else {
@@ -317,8 +316,7 @@ public class TCPServer extends NetworkAgent {
 			
 			if(available_space > 0xFFFF)
 				available_space = 0xFFFF; //make it fit into 16 bytes.
-			
-			log("Rbuffer status: Max = " + maxRcvBufferSize + " last read = " + lastByteRead + " last rcvd = " + lastByteRcvd + " space = " + available_space);
+
 			return available_space;
 		} else {
 			rcvBufferLock.unlock(); //unlock the buffer no matter what
@@ -398,7 +396,7 @@ public class TCPServer extends NetworkAgent {
 			if(dataCount > 0)
 			{
 				log("Application Wrote " + dataCount + " data chunks to file");
-				log("Rbuffer status: Max = " + maxRcvBufferSize + " last read = " + lastByteRead + " last rcvd = " + lastByteRcvd);
+				log("\tRbuffer status: Max = " + maxRcvBufferSize + " last read = " + lastByteRead + " last rcvd = " + lastByteRcvd);
 			}
 			
 			if(isLastPacketReceived)
