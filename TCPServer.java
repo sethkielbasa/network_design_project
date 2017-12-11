@@ -7,6 +7,7 @@ import java.util.concurrent.locks.Lock;
 
 public class TCPServer extends NetworkAgent {
 	
+	byte[] lastPacket;
 	public TCPServer(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance, int maxRcvBuffer, int applicationWorkTime)
 	{
 		super("SERVER: ", "ServerLog.txt", imageName, port, packetLogging, corruptionChance, dropChance,0);
@@ -32,7 +33,7 @@ public class TCPServer extends NetworkAgent {
 		
 		byte[] sendPacket = new byte[0];	//packet (with header) sent to the server
 		byte[] receivePacket = new byte[0]; 	//packet (with header) received from the server
-		byte[] lastPacket = null;
+		lastPacket = null;
 		byte[] sendData;
 		DatagramPacket receiveDatagram;
 		int tcp_flags;
@@ -155,7 +156,12 @@ public class TCPServer extends NetworkAgent {
 					} catch (InterruptedIOException e){
 						//Go back to OPEN and re-send packet
 						log("SERVER: ESTABLISHED Timeout");
-						log("Server sending packet with SN: " + sequence_number + " and AK: " + ack_number);						
+						log("Server sending packet with SN: " + sequence_number + " and AK: " + ack_number);	
+						
+						//update the rcwind field in the last packet sent
+						int availableSpace = maxRcvBufferSize - (lastByteRcvd - lastByteRead);
+						lastPacket = updateLastPacketRcWindSize(availableSpace);
+						log("Available space: " + availableSpace);
 						unreliableSendPacket(lastPacket, dst_port);
 					}
 					if( checkTCPFlags( receivePacket, State.FIN_WAIT_1)){
@@ -324,6 +330,27 @@ public class TCPServer extends NetworkAgent {
 		}
 		
 	}
+	
+	//hack to update the rcwind size
+	//on the lastPacket variable to prevent the system from stalling on a very specific case in dataDrop
+	public byte[] updateLastPacketRcWindSize(int newRcwind)
+	{
+		//set new rwind field
+		lastPacket[14] = (byte) ((newRcwind >> 8) & 0xFF); 
+		lastPacket[15] = (byte) (newRcwind & 0xFF);
+		
+		//reset checksum
+		lastPacket[16] = 0;
+		lastPacket[17] = 0;
+		
+		//calculate new checksum
+		byte[] checksum = new byte[2];
+		checksum = calculateChecksum( lastPacket, true);
+		lastPacket[16] = checksum[0];
+		lastPacket[17] = checksum[1];
+		return lastPacket;
+	}
+	
 	@Override
 	public void run() {
 		try {
@@ -397,6 +424,10 @@ public class TCPServer extends NetworkAgent {
 			{
 				log("Application Wrote " + dataCount + " data chunks to file");
 				log("\tRbuffer status: Max = " + maxRcvBufferSize + " last read = " + lastByteRead + " last rcvd = " + lastByteRcvd);
+				
+				//update the rcwind field in the last packet sent
+				int availableSpace = maxRcvBufferSize - (lastByteRcvd - lastByteRead);
+				lastPacket = updateLastPacketRcWindSize(availableSpace);
 			}
 			
 			if(isLastPacketReceived)
