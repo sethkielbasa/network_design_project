@@ -108,13 +108,11 @@ public class TCPClient extends NetworkAgent{
 				}
 				
 				//If received packet is not SYN-ACK
-				if( !checkTCPFlags(receivePacket, Client_State) ){
-					if( compareChecksum( receivePacket ) ){
-						updateRTTTrackerIfAppropriate(receivePacket);
-						log("CLIENT: Don't know what this is");
-						Client_State = State.OPEN;
-						break;
-					}
+				if( !checkTCPFlags(receivePacket, Client_State) || !compareChecksum(receivePacket) ){
+					updateRTTTrackerIfAppropriate(receivePacket);
+					log("CLIENT: Don't know what this is");
+					Client_State = State.OPEN;
+					break;
 				}
 
 				log("Client got SYN-ACK");
@@ -245,7 +243,7 @@ public class TCPClient extends NetworkAgent{
 				}
 				
 				//If received packet is not SYN-ACK
-				if( !checkTCPFlags(receivePacket, Client_State) ){
+				if( checkTCPFlags(receivePacket, Client_State) ){
 					if( compareChecksum( receivePacket) ){
 						updateRTTTrackerIfAppropriate(receivePacket);
 						Client_State = State.TIME_WAIT;
