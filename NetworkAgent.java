@@ -539,7 +539,8 @@ public abstract class NetworkAgent implements Runnable {
 	 */
 	void updateRTTTrackerIfAppropriate(byte[] packet)
 	{
-		if(extractAckNumber(packet) > trackingSeqNum)
+		//if this packet acks the trackingSeqNum && you're tracking something
+		if(extractAckNumber(packet) > trackingSeqNum && trackingSeqNum > 0)
 		{
 			//calculate sample RTT because the packet you've been tracking has just been ACK'ed
 			long endTime = System.currentTimeMillis();

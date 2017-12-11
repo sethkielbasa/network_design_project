@@ -21,6 +21,7 @@ public class TCPClient extends NetworkAgent{
 	int sequence_number = 0;
 	int send_ack_number = 0;
 	
+	boolean noNewData;
 	public TCPClient(String imageName, int port, boolean packetLogging, double corruptionChance, double dropChance, int startingWindowSize, int ssthresh)
 	{
 		super("CLIENT: ", "ClientLog.txt", imageName, port, packetLogging, corruptionChance, dropChance, startingWindowSize);
@@ -30,6 +31,7 @@ public class TCPClient extends NetworkAgent{
 		nextSendSeqNum = 0;
 		slowStartThresh = ssthresh;
 		//System.out.println(timeOut);
+		noNewData = false;
 	}
 
 	@Override
@@ -186,6 +188,7 @@ public class TCPClient extends NetworkAgent{
 							Client_State = State.FIN_WAIT_1;
 							break;
 						}
+						noNewData = true;
 						//don't make new packet, but let window get emptied out before moving on
 					} 
 					else
@@ -544,8 +547,11 @@ public class TCPClient extends NetworkAgent{
 				
 				if(ccState == CCState.FAST_REC)
 				{
-					maxSendWindowSize++; //this line caused ridiculous window growth in high error conditions
-					//keep sending normal packets
+					maxSendWindowSize++; 
+					//keep sending new packets
+					//if you're out of new packet data, send the window
+					if(noNewData)
+						retransmitWindow();
 				}
 				else //SLOW_START and CON_AVO
 				{
