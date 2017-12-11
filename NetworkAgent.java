@@ -498,6 +498,7 @@ public abstract class NetworkAgent implements Runnable {
 			{//nothing is being tracked, so start tracking this packet
 				trackingSeqNum = extractSequenceNumber(sendPacket);
 				trackingStartTime = System.currentTimeMillis();
+				log("\tTracking new packet #: " + trackingSeqNum + " trackingStartTime: " + trackingStartTime);
 			}
 			transmitPacket(corruptDataMaybe(sendPacket, corruptionChance), datagramSocket, dst_port);
 			//log("URSent packet: " + extractSequenceNumber(sendPacket));
@@ -521,13 +522,13 @@ public abstract class NetworkAgent implements Runnable {
 	
 	//given a new sample RTT,
 	// recalculate estimatedRtt and devRTT
-	void assimilateNewSampleRTT(long newSampleRTT)
+	void assimilateNewSampleRTT(long newSampleRTT, int packetNum)
 	{
 		//from textbook pg 240
 		estimatedRTT = 0.875 * estimatedRTT + 0.125 * newSampleRTT;
 		devRTT = 0.75 * devRTT + 0.25 * Math.abs(newSampleRTT - estimatedRTT);
 		
-		log("New timeoutInterval: " + getTimeoutInterval());
+		log("New timeoutInterval: " + getTimeoutInterval() + " from packet: " + packetNum);
 		log("\tsample: " + newSampleRTT);
 		log("\testimated: " + estimatedRTT + " devRTT: " + devRTT);
 	}
@@ -542,7 +543,7 @@ public abstract class NetworkAgent implements Runnable {
 		{
 			//calculate sample RTT because the packet you've been tracking has just been ACK'ed
 			long endTime = System.currentTimeMillis();
-			assimilateNewSampleRTT(endTime - trackingStartTime);
+			assimilateNewSampleRTT(endTime - trackingStartTime, extractAckNumber(packet));
 			
 			//flag that you're not tracking any packets now
 			trackingSeqNum = -1;

@@ -206,6 +206,7 @@ public class TCPServer extends NetworkAgent {
 								unreliableSendPacket(lastPacket, dst_port);
 							}
 						} else {
+							log("Received bad packet, sending old one. Checksum " + compareChecksum(receivePacket) + " seqNum " + ( extractSequenceNumber(receivePacket) ==  ack_number) + " ACK " + ack_number);
 							unreliableSendPacket(lastPacket, dst_port);
 						}
 					}

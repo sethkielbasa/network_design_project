@@ -361,26 +361,12 @@ public class TCPClient extends NetworkAgent{
 		sendWindowLock.lock(); //protect the window from mutual access w/ receiver
 		try{
 			//check if we're flooding the server receive buffer first
-			if(cpyRwindSize < nextSendSeqNum - sendWindowBase)
+			if(cpyRwindSize < nextSendSeqNum - sendWindowBase && cpyRwindSize != 0)
 			{
-				log("FLOW CONTROL: flooding prevented: " + cpyRwindSize + " available receiver space." + " Unacked PIF: " + (nextSendSeqNum - sendWindowBase));
+				log("FLOW CONTROL: flooding prevented. GBN: " + cpyRwindSize + " available receiver space." + " Unacked PIF: " + (nextSendSeqNum - sendWindowBase));
 				
-				//if we are, pretend that the max send window size is 1
-				if(sendWindow.size() < 1)
-				{
-					log("\tAllowing this one unACKED packet to go out to the receiver");
-					sendWindow.add(sendPacket);
-					//if sending first in the window, start the timer
-					if(sendWindowBase == nextSendSeqNum)
-					{
-						datagramSocket.setSoTimeout(getTimeoutInterval());
-						log("Started reset timer");
-					}
-					nextSendSeqNum = extractSequenceNumber(sendPacket) + dataLength; //increment sequence number
-					log("Client sending packet with SN: " + sequence_number + " and AK: " + send_ack_number);
-					unreliableSendPacket(sendPacket, dst_port);
-					return true;
-				}
+				//if we are, pretend that everything got messed up.
+				 retransmitWindow();
 			} //normal rdt_Send
 			else if(sendWindow.size() < maxSendWindowSize)
 			{
@@ -558,7 +544,7 @@ public class TCPClient extends NetworkAgent{
 				
 				if(ccState == CCState.FAST_REC)
 				{
-					//maxSendWindowSize++; //this line caused ridiculous window growth in high error conditions
+					maxSendWindowSize++; //this line caused ridiculous window growth in high error conditions
 					//keep sending normal packets
 				}
 				else //SLOW_START and CON_AVO
